@@ -1,5 +1,5 @@
 fastapi
 uvicorn[standard]
 httpx
-agora-token-builder
+# no PyPI package builds AccessToken2 ("007") — see backend/token2.py
 python-dotenv

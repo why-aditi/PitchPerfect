@@ -12,6 +12,7 @@ export type Pricing = { currency: string; enterprise_seat_threshold: number; tie
 export type LeadState = {
   session_id: string;
   company: string | null;
+  email: string | null;
   industry: string | null;
   use_case: string | null;
   seat_count: number | null;

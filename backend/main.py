@@ -1,4 +1,9 @@
-"""FastAPI app: call lifecycle. Run: uvicorn backend.main:app --reload"""
+"""FastAPI app: call lifecycle and the dashboard event stream.
+
+Run: uvicorn backend.main:app --reload
+"""
+import asyncio
+import json
 import os
 import secrets
 import time
@@ -6,11 +11,12 @@ import time
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 load_dotenv()
 
-from . import agora, proxy, rtm, state  # noqa: E402  (env must load first)
+from . import agora, proxy, rtm, state  # noqa: E402  (env must load before module constants)
 from .tools import crm  # noqa: E402
 
 app = FastAPI(title="PitchPilot")
@@ -33,11 +39,12 @@ class StopCall(BaseModel):
 
 @app.post("/start-call")
 async def start_call(req: StartCall):
-    suffix = secrets.token_hex(2)
-    session_id, channel = f"sess_{suffix}", f"pitchpilot-{suffix}"
+    session_id = f"sess_{secrets.token_hex(2)}"
+    channel = rtm.channel_for(session_id)
     token = agora.build_token(channel, int(PROSPECT_UID))
     llm_url = f"{PUBLIC_BASE_URL}/v1/chat/completions?session_id={session_id}"
-    joined = await agora.join(agora.start_payload(session_id, channel, token, llm_url, AGENT_UID, PROSPECT_UID))
+    joined = await agora.join(
+        agora.start_payload(session_id, channel, token, llm_url, AGENT_UID, PROSPECT_UID))
 
     state.get(session_id)
     SESSIONS[session_id] = {"agent_id": joined["agent_id"], "channel": channel, "started": time.time()}
@@ -56,6 +63,26 @@ async def stop_call(req: StopCall):
         crm.sync_contact(final, force=True)
     rtm.publish(req.session_id, "call_ended", {"duration_s": int(time.time() - session["started"])})
     return {"ok": True}
+
+
+@app.get("/events")
+async def events():
+    """Dashboard event stream carrying the PRD 6.2 envelope. EventSource reconnects itself."""
+    q = rtm.open_stream()
+
+    async def pump():
+        try:
+            while True:
+                try:
+                    msg = await asyncio.wait_for(q.get(), timeout=15)
+                    yield "data: " + json.dumps(msg) + "\n\n"
+                except TimeoutError:
+                    yield ": keepalive\n\n"  # stops proxies closing an idle stream
+        finally:
+            rtm.close_stream(q)
+
+    return StreamingResponse(pump(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.get("/lead-state/{session_id}")

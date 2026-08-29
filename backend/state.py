@@ -9,6 +9,7 @@ def new_state(session_id: str) -> dict:
     return {
         "session_id": session_id,
         "company": None,
+        "email": None,
         "industry": None,
         "use_case": None,
         "seat_count": None,

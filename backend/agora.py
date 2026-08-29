@@ -4,6 +4,8 @@ import os
 
 import httpx
 
+from . import token2
+
 APP_ID = os.getenv("AGORA_APP_ID", "")
 APP_CERTIFICATE = os.getenv("AGORA_APP_CERTIFICATE", "")
 CUSTOMER_ID = os.getenv("AGORA_CUSTOMER_ID", "")
@@ -18,7 +20,7 @@ def _auth() -> dict:
 
 def build_token(channel: str, uid: int, expire_s: int = 3600) -> str:
     """RTC + RTM privileges in one token — an RTC-only token breaks enable_rtm (PRD 6.1)."""
-    raise NotImplementedError("agora-token-builder: RtcTokenBuilder with RTM privilege")
+    return token2.build(APP_ID, APP_CERTIFICATE, channel, uid, expire_s)
 
 
 def start_payload(session_id: str, channel: str, token: str, llm_url: str,

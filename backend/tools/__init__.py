@@ -1,6 +1,7 @@
 """Tool layer. SPECS is what the LLM sees; REGISTRY is what the proxy calls."""
 from .pricing import get_pricing
 from .battlecards import get_battlecard
+from . import calendar, crm, escalation  # noqa: F401  (proxy dispatches through these)
 from .crm import sync_contact
 from .calendar import check_slots, book_meeting
 from .escalation import escalate_to_human
@@ -23,7 +24,7 @@ SPECS = [
      "parameters": {"type": "object", "properties": {"competitor": {"type": "string"}}, "required": ["competitor"]}},
     {"name": "update_lead_state", "description": "Record anything learned about the prospect. Merges into the lead state.",
      "parameters": {"type": "object", "properties": {
-         "company": {"type": "string"}, "industry": {"type": "string"}, "use_case": {"type": "string"},
+         "company": {"type": "string"}, "email": {"type": "string"}, "industry": {"type": "string"}, "use_case": {"type": "string"},
          "seat_count": {"type": "integer"},
          "budget_signal": {"type": "string", "enum": ["under_budget", "stretch", "over_budget"]},
          "timeline": {"type": "string", "enum": ["now", "this_quarter", "exploring"]},
