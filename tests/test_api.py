@@ -212,3 +212,61 @@ def test_stop_call_emits_call_ended_that_the_dashboard_can_see(bound, monkeypatc
 
     msg = asyncio.run(go())
     assert msg["type"] == "call_ended", msg
+
+
+# --- console observe -------------------------------------------------------------------
+# Mints an RTC token for a call already in progress. PRD 6.2 keeps transcripts on the
+# engine's data channel, so joining the channel is the only way the live and rep views can
+# read one. It hands out credentials, so the guards matter.
+
+OBSERVE = {"agent_id": "ag_demo", "channel": "pitchpilot-8f2a"}
+
+
+def test_observe_requires_an_operator_session(client):
+    console.CONSOLE_PASSWORD = "hunter2"
+    assert client.post("/console/observe", json=OBSERVE).status_code == 401
+
+
+def test_observe_refuses_a_channel_that_is_not_ours(operator):
+    """Without the prefix check this endpoint would mint a token for any channel name."""
+    r = operator.post("/console/observe", json={"agent_id": "ag_demo", "channel": "someone-elses"})
+    assert r.status_code == 400
+
+
+def test_observe_refuses_a_channel_that_merely_contains_the_prefix(operator):
+    r = operator.post("/console/observe",
+                      json={"agent_id": "ag_demo", "channel": "evil-pitchpilot-8f2a"})
+    assert r.status_code == 400
+
+
+def test_observe_returns_a_joinable_token(operator, monkeypatch):
+    monkeypatch.setattr(main.agora, "build_token", lambda channel, uid, **kw: f"007fake-{uid}")
+    body = operator.post("/console/observe", json=OBSERVE).json()
+    assert body["channel"] == OBSERVE["channel"]
+    assert body["rtc_token"].startswith("007")
+    assert body["agent_rtc_uid"] == "1001"
+
+
+def test_two_operators_watching_one_call_get_different_uids(operator, monkeypatch):
+    """Agora drops the earlier holder when a uid joins twice, so a fixed uid here would
+    knock the first watcher out of the channel."""
+    monkeypatch.setattr(main.agora, "build_token", lambda channel, uid, **kw: "007fake")
+    uids = {operator.post("/console/observe", json=OBSERVE).json()["uid"] for _ in range(20)}
+    assert len(uids) > 1
+
+
+def test_observer_uids_never_collide_with_the_fixed_call_uids(operator, monkeypatch):
+    monkeypatch.setattr(main.agora, "build_token", lambda channel, uid, **kw: "007fake")
+    for _ in range(20):
+        assert operator.post("/console/observe", json=OBSERVE).json()["uid"] not in ("1001", "1002")
+
+
+def test_missing_agora_credentials_say_so_instead_of_500(operator, monkeypatch):
+    """The console renders this verbatim; "500" tells an operator nothing they can act on."""
+    def unconfigured(channel, uid, **kw):
+        raise ValueError("app_id and app_certificate must each be 32 hex characters")
+
+    monkeypatch.setattr(main.agora, "build_token", unconfigured)
+    r = operator.post("/console/observe", json=OBSERVE)
+    assert r.status_code == 503
+    assert "not configured" in r.json()["detail"]

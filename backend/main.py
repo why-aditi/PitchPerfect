@@ -8,6 +8,8 @@ import os
 import secrets
 import time
 
+from contextlib import asynccontextmanager
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,7 +21,16 @@ load_dotenv()
 from . import agents, agora, console, db, proxy, rtm, state  # noqa: E402  (env first)
 from . import tools  # noqa: E402
 
-app = FastAPI(title="PitchPilot")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """The pool is created lazily on first use, so nothing here has to succeed for the
+    keyless text-mode paths to work. Closing it on shutdown is what stops a reload leaking
+    connections against a free-tier database with a low connection cap."""
+    yield
+    await db.close()
+
+
+app = FastAPI(title="PitchPilot", lifespan=lifespan)
 # The widget runs on whatever site embedded it, so the call endpoints are cross-origin by
 # design. The allowlist on the agent, not CORS, is what decides who may start a call.
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])

@@ -18,7 +18,14 @@ _pool: asyncpg.Pool | None = None
 async def connect() -> asyncpg.Pool:
     global _pool
     if _pool is None:
-        _pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
+        # Supabase's transaction pooler (:6543) multiplexes sessions, so asyncpg's prepared
+        # statements collide across connections with "prepared statement already exists".
+        # The session pooler (:5432) is unaffected. Detect rather than disable everywhere,
+        # since prepared statements are worth keeping when they work.
+        transaction_pooler = ":6543" in DATABASE_URL
+        _pool = await asyncpg.create_pool(
+            DATABASE_URL, min_size=1, max_size=5,
+            statement_cache_size=0 if transaction_pooler else 100)
         await _pool.execute((Path(__file__).parent / "schema.sql").read_text())
     return _pool
 
