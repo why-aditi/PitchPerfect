@@ -1,0 +1,53 @@
+{
+  "currency": "USD",
+  "enterprise_seat_threshold": 100,
+  "tiers": [
+    {
+      "name": "Starter",
+      "per_seat_month": 19,
+      "min_seats": 1,
+      "max_seats": 9,
+      "volume_break": null,
+      "features": [
+        "Core workspace",
+        "Email support",
+        "5 GB storage per seat"
+      ]
+    },
+    {
+      "name": "Growth",
+      "per_seat_month": 39,
+      "min_seats": 10,
+      "max_seats": 99,
+      "volume_break": {
+        "seats": 50,
+        "per_seat_month": 34
+      },
+      "features": [
+        "Everything in Starter",
+        "SSO",
+        "Analytics dashboard",
+        "API access",
+        "Priority support"
+      ]
+    },
+    {
+      "name": "Enterprise",
+      "per_seat_month": 32,
+      "min_seats": 100,
+      "max_seats": null,
+      "volume_break": {
+        "seats": 250,
+        "per_seat_month": 27
+      },
+      "features": [
+        "Everything in Growth",
+        "SAML + SCIM",
+        "Audit logs",
+        "99.9% uptime SLA",
+        "Dedicated CSM",
+        "Custom DPA"
+      ]
+    }
+  ]
+}

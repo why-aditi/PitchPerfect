@@ -1,0 +1,14 @@
+{
+  "northbeam": {
+    "positioning": "Northbeam is a strong reporting tool; we are the system of action teams work in daily.",
+    "we_win": ["Native workflow automation", "Setup in days, not a six-week onboarding", "Per-seat price ~30% lower at 100+ seats"],
+    "we_concede": ["Their attribution modelling is deeper than ours"],
+    "proof_point": "Kestrel Logistics moved 340 seats off Northbeam and cut reporting time from 9 hours to 40 minutes a week."
+  },
+  "orbitflow": {
+    "positioning": "Orbitflow is built for engineering teams; we cover the whole go-to-market org.",
+    "we_win": ["Non-technical users need no training", "SSO and audit logs on Growth, not Enterprise-only", "Open API with no per-call fees"],
+    "we_concede": ["Their Git integration is better than ours"],
+    "proof_point": "Halden Group consolidated three Orbitflow workspaces into one of ours in a two-week pilot."
+  }
+}

@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+httpx
+agora-token-builder
+python-dotenv
