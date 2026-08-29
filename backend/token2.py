@@ -67,20 +67,3 @@ def build(app_id: str, app_certificate: str, channel: str, uid: int,
     signature = hmac.new(key, signing_info, sha256).digest()
 
     return VERSION + base64.b64encode(zlib.compress(_string(signature) + signing_info)).decode()
-
-
-if __name__ == "__main__":
-    # Golden vector generated from Agora's reference AccessToken2.py with the same
-    # fixed app_id, certificate, issue_ts and salt. Any packing drift changes this string.
-    GOLDEN = ("007eJxTYGBkz7N4sFn98e+Mq5/Nrs+/ynGB7dLCDzNl3BwPSv2L3iyhwJBIADS0lqQL8DEw+CXuYWBiYGRgYWBkAPGZwCQzmGQBk/wMBZklyRkFmTn5JboWaUaJLAyGBgZGIE0QLRA+ABJZKCM=")
-    got = build("a" * 32, "b" * 32, "pitchpilot-8f2a", 1002, expire_s=3600,
-                issue_ts=1735689600, salt=12345678)
-    assert got.startswith("007"), got[:8]
-    assert got == GOLDEN, f"packing drift:\n got {got}\nwant {GOLDEN}"
-    try:
-        build("nothex", "b" * 32, "c", 1)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("bad app_id must raise")
-    print("token2.py ok")

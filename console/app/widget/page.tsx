@@ -14,7 +14,10 @@ import CallWidget from "@/components/CallWidget";
  * height dynamic, and a hardcoded pair of sizes would clip it.
  */
 function Widget() {
-  const agentId = useSearchParams().get("agent");
+  const params = useSearchParams();
+  const agentId = params.get("agent");
+  // Set by the embed loader from the host page; absent when opened directly.
+  const pageOrigin = params.get("origin") ?? undefined;
   const root = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -55,7 +58,7 @@ function Widget() {
       {/* The padding is inside the measured box, so the panel's shadow is not clipped by
           the iframe edge. */}
       <div ref={root} className="inline-block p-3">
-        <CallWidget agentId={agentId} />
+        <CallWidget agentId={agentId} pageOrigin={pageOrigin} />
       </div>
     </div>
   );

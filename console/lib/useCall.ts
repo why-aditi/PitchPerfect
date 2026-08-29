@@ -20,7 +20,7 @@ import type { CallState, Session } from "./types";
  * and the copies had already drifted.
  */
 export type CallMode =
-  | { kind: "call"; agentId: string; pageContext?: string }
+  | { kind: "call"; agentId: string; pageContext?: string; pageOrigin?: string }
   | { kind: "observe"; agentId: string; channel: string; mic: boolean };
 
 /** Volume units are 0–100; anything under this is room noise, not speech. */
@@ -99,7 +99,7 @@ export function useCall(mode: CallMode): Call {
     try {
       const s =
         current.kind === "call"
-          ? await startCall(current.agentId, current.pageContext)
+          ? await startCall(current.agentId, current.pageContext, current.pageOrigin)
           : await observeChannel(current.agentId, current.channel);
       setSession(s);
 

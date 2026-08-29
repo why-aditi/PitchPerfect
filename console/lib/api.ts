@@ -91,10 +91,10 @@ export const deleteAgent = (id: string) =>
   call<{ ok: boolean }>(`/console/agents/${id}`, { method: "DELETE" });
 
 // Call lifecycle, used by the widget route rather than by the console screens.
-export const startCall = (agent_id: string, page_context = "pricing") =>
+export const startCall = (agent_id: string, page_context = "pricing", page_origin?: string) =>
   call<Session>("/start-call", {
     method: "POST",
-    body: JSON.stringify({ agent_id, page_context }),
+    body: JSON.stringify({ agent_id, page_context, page_origin }),
   });
 
 export const stopCall = (session_id: string) =>

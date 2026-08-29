@@ -88,7 +88,7 @@ Project 2: demo SPA (web/)              Project 1: console (console/)
 │  tools layer, configured per agent                           │
 └──────────────┬─────────────────────┬─────────────────────────┘
                │                     │
-         Postgres                Groq / Gemini · HubSpot · Cal.com · Slack
+         Postgres                Groq · HubSpot · Cal.com · Slack
      agents · calls              (credentials per agent, from the DB)
 ```
 
@@ -330,7 +330,7 @@ Vantage: a fictional SaaS with a real-looking pricing table, generated from the 
 | Turn latency | End of prospect speech to first agent audio under ~1.2 s |
 | Barge-in | TTS stops within ~300 ms of detected speech |
 | Config load | Agent config is read every turn; cache it for the life of a call so a cold database connection never sits in the tool path |
-| Cost | Zero. Agora free tier, Groq/Gemini free tiers, HubSpot free CRM, Cal.com free plan, free-tier Postgres |
+| Cost | Zero. Agora free tier, Groq free tier, HubSpot free CRM, Cal.com free plan, free-tier Postgres |
 | Voice minutes | Conversational AI minutes are the scarce resource — text-mode testing for everything except integration runs |
 | Failure behaviour | LLM timeout or tool error means the engine's failure message covers the spoken side; the proxy still logs the lead and creates a follow-up task |
 | Secrets | Integration credentials are write-only across the API and never appear in a console read response, a log line, or an event payload |
@@ -524,7 +524,7 @@ Pass = all six, without opening the Agora dashboard once.
 |---|---|
 | Conversational AI minutes run out mid-build | All brain work in text mode; voice runs are scheduled, not exploratory. Low idle timeout and explicit leave on hang-up so idle agents don't burn minutes |
 | The split stalls the thing being judged | §15.1 is the pass bar and it must pass at the end of every phase. If the console slips, a seeded `ag_demo` still runs the full scenario |
-| Groq free-tier token limits with long calls | Aggressive history trimming; Gemini Flash key configured as fallback |
+| Groq free-tier token limits with long calls | Groq is the only provider, so there is no failover: aggressive history trimming is the whole mitigation. The proxy sends the system prompt, the lead state and the last 8 turns, collapsing older ones into one line. A turn that still gets rate-limited falls to the engine's `failure_message`, and the proxy logs the lead and sets a follow-up |
 | Over-eager barge-in | Raise `speaking_interrupt_duration_ms` in the Voice tab; keep semantic end-of-speech on rather than raw VAD |
 | Copying a deprecated config from a tutorial | §12 is the reference; anything setting interrupt fields inside `turn_detection` is out of date |
 | The engine can't reach our proxy | Public tunnel required from day one — localhost will never work. Verify with a curl from outside the LAN before blaming the engine |
@@ -545,7 +545,7 @@ Platform-level only. Per-agent integration credentials live in the database, not
 ```
 AGORA_APP_ID=            AGORA_APP_CERTIFICATE=     # token generation
 AGORA_CUSTOMER_ID=       AGORA_CUSTOMER_SECRET=     # Basic auth for the engine REST API
-GROQ_API_KEY=            GEMINI_API_KEY=            # fallback
+GROQ_API_KEY=                                       # the only LLM provider
 TTS_VENDOR_KEY=                                     # only if managed mode is not used
 LLM_PROXY_SECRET=                                   # matches properties.llm.api_key
 DATABASE_URL=                                       # Postgres, free tier

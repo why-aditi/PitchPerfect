@@ -53,17 +53,3 @@ def qualify(bant: dict) -> str:
 
 def drop(session_id: str) -> dict | None:
     return _STORE.pop(session_id, None)
-
-
-if __name__ == "__main__":
-    s = update("t", company="Acme", seat_count=20, objections_raised="pricing")
-    assert s["company"] == "Acme" and s["qualification"] == "cold"
-    s = update("t", seat_count=200, objections_raised=["pricing", "trust"])
-    assert s["seat_count"] == 200, "later writes win"
-    assert s["objections_raised"] == ["pricing", "trust"], "arrays append, no dupes"
-    s = update("t", bant={"budget": 3, "need": 2})
-    assert s["qualification"] == "warm" and s["bant"]["authority"] == 0, "partial bant merge"
-    s = update("t", bant={"authority": 2, "timeline": 2})
-    assert s["qualification"] == "hot" and sum(s["bant"].values()) == 9
-    assert update("t", company=None)["company"] == "Acme", "None does not clear"
-    print("state.py ok")

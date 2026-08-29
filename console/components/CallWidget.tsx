@@ -11,8 +11,15 @@ import { clock, useCall } from "@/lib/useCall";
  * is left here is the part a viewer judges — which of the four states the agent is in, and
  * who is talking over whom.
  */
-export default function CallWidget({ agentId }: { agentId: string }) {
-  const call = useCall({ kind: "call", agentId });
+export default function CallWidget({
+  agentId,
+  pageOrigin,
+}: {
+  agentId: string;
+  /** The site that embedded us. The iframe's own Origin only ever names the console. */
+  pageOrigin?: string;
+}) {
+  const call = useCall({ kind: "call", agentId, pageOrigin });
   const [asking, setAsking] = useState(false);
   const [denied, setDenied] = useState<string | null>(null);
 

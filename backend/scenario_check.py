@@ -8,10 +8,14 @@ BANT derivation, the events the dashboard renders — not Groq's word choice. Ru
 import asyncio
 import json
 
-from . import proxy, rtm, state
+from . import agents, proxy, rtm, state, tools
+from .seed import DEMO_ID
 
 SID = "sess_test"
 events: list[dict] = []
+
+EXPECT_TOOLS = ["get_pricing", "get_battlecard", "update_lead_state",
+                "check_slots", "book_meeting", "escalate_to_human"]
 
 
 def _call(tool, **args):
@@ -42,8 +46,9 @@ SCRIPT = [
 ]
 
 
-async def fake_complete(messages):
+async def fake_complete(config, messages, specs):
     """Replaces the Groq round trip. Returns scripted tool calls, then scripted text."""
+    assert {s["name"] for s in specs} == set(EXPECT_TOOLS), "the agent must offer exactly its enabled tools"
     step = SCRIPT.pop(0)
     if isinstance(step, list):
         return {"role": "assistant", "content": None, "tool_calls": step}
@@ -53,6 +58,13 @@ async def fake_complete(messages):
 async def main():
     rtm.subscribe(events.append)
     proxy.complete = fake_complete
+
+    # The whole point of Phase 2: config comes from the agent record, not from module
+    # constants. With no DATABASE_URL this resolves through the seed.
+    bound = await agents.bind(SID, DEMO_ID)
+    assert bound is not None, f"could not load {DEMO_ID}"
+    config, _ = bound
+    assert config.knowledge.tiers, "the agent carries its own pricing"
 
     history = []
     for prompt in ["Price for about 20 users?", "How does that compare to Northbeam?",
@@ -65,7 +77,7 @@ async def main():
 
     lead = state.get(SID)
     kinds = [e["type"] for e in events]
-    tools = [e["data"]["name"] for e in events if e["type"] == "tool_call"]
+    called = [e["data"]["name"] for e in events if e["type"] == "tool_call"]
     quotes = [e["data"]["result_summary"] for e in events
               if e["type"] == "tool_call" and e["data"]["name"] == "get_pricing"]
 
@@ -82,8 +94,8 @@ async def main():
     assert lead["qualification"] == "hot", lead["qualification"]
     assert lead["next_action"] == "book_demo", lead["next_action"]
 
-    assert tools.count("get_battlecard") == 1 and tools.count("check_slots") == 1
-    assert "book_meeting" in tools
+    assert called.count("get_battlecard") == 1 and called.count("check_slots") == 1
+    assert "book_meeting" in called
     outcomes = [e["data"]["kind"] for e in events if e["type"] == "outcome"]
     assert outcomes == ["meeting_booked"], outcomes
     assert kinds.count("lead_state") >= 6, kinds
@@ -97,6 +109,24 @@ async def main():
     bad = proxy.run_tool(SID, "get_battlecard", {"competitor": "NobodyCorp"})
     assert bad["error"] == "no_data", bad
     assert proxy.run_tool(SID, "get_pricing", {"nonsense": 1})["error"] == "TypeError"
+
+    # A tool switched off in the console is not offered, and is refused if asked for anyway.
+    config.tools_enabled.calendar = False
+    assert "check_slots" not in {s["name"] for s in tools.specs_for(config)}
+    assert proxy.run_tool(SID, "check_slots", {})["error"] == "tool_disabled"
+    config.tools_enabled.calendar = True
+
+    # The origin allowlist, at the endpoint. Both refusals happen before any Agora call.
+    from fastapi.testclient import TestClient
+
+    from .main import app
+
+    c = TestClient(app)
+    body = {"agent_id": DEMO_ID, "page_context": "pricing"}
+    assert c.post("/start-call", json=body, headers={"Origin": "https://evil.test"}).status_code == 403
+    assert c.post("/start-call", json=body).status_code == 403, "a missing Origin is not a pass"
+    assert c.post("/start-call", json={"agent_id": "ag_nope"},
+                  headers={"Origin": "http://localhost:3000"}).status_code == 404
 
     print(f"scenario_check ok — {len(events)} events, lead is {lead['qualification']}")
 
