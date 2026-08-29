@@ -9,19 +9,20 @@ import secrets
 import time
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 load_dotenv()
 
-from . import agora, proxy, rtm, state  # noqa: E402  (env must load before module constants)
+from . import agora, console, proxy, rtm, state  # noqa: E402  (env must load before module constants)
 from .tools import crm  # noqa: E402
 
 app = FastAPI(title="PitchPilot")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app.include_router(proxy.router)
+app.include_router(console.router)
 
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
 SESSIONS: dict[str, dict] = {}
@@ -90,8 +91,24 @@ def lead_state(session_id: str):
     return state.get(session_id)
 
 
-@app.get("/pricing")
-def pricing():
-    """The landing page renders from the same file the agent reads, so they cannot disagree."""
-    from .tools.pricing import _DATA
-    return _DATA
+@app.get("/agents/{agent_id}/pricing")
+async def agent_pricing(agent_id: str):
+    """Public: the demo site renders its table from the agent's own knowledge, so the page
+    and the agent cannot contradict each other (PRD 10.2)."""
+    from . import db
+    from .models import AgentConfig
+
+    config: AgentConfig | None = None
+    if db.DATABASE_URL:
+        agent = await db.get_agent(agent_id)
+        if agent is None:
+            raise HTTPException(404, "no such agent")
+        config = agent["config"]
+    else:
+        # ponytail: no database configured yet means serve the seed, so the demo site works
+        # before Phase 1 is deployed. Remove once DATABASE_URL is always set.
+        from .seed import demo_config
+        config = demo_config()
+
+    return {"currency": config.knowledge.currency,
+            "tiers": [t.model_dump() for t in config.knowledge.tiers]}

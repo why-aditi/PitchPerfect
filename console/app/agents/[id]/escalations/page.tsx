@@ -1,27 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { subscribe } from "@/lib/events";
 import { startCall } from "@/lib/api";
 import type { RtmEvent } from "@/lib/types";
 
 type Escalation = { reason: string; summary: string; channel: string; ts: number };
 
-export default function RepView() {
+export default function Escalations({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const [queue, setQueue] = useState<Escalation[]>([]);
   const [joined, setJoined] = useState<string | null>(null);
 
   useEffect(
     () =>
-      subscribe((e: RtmEvent) => {
+      subscribe(id, (e: RtmEvent) => {
         if (e.type === "escalation") setQueue((q) => [{ ...e.data, ts: e.ts }, ...q]);
       }),
-    [],
+    [id],
   );
 
-  // Joins the same RTC channel the prospect and agent are already in (PRD 10).
+  // Joins the same RTC channel the prospect and agent are already in (PRD 10.1).
   async function join(channel: string) {
-    const s = await startCall("rep");
+    const s = await startCall(id, "rep");
     const AgoraRTC = (await import("agora-rtc-sdk-ng")).default;
     const client = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
     await client.join(s.app_id, channel, s.rtc_token, Number(s.uid));
@@ -36,6 +37,7 @@ export default function RepView() {
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
       <h1 className="text-2xl font-semibold">Escalations</h1>
+      <p className="font-mono text-xs text-neutral-500">{id}</p>
       {queue.length === 0 && (
         <p className="mt-4 text-sm text-neutral-500">Waiting for escalations…</p>
       )}

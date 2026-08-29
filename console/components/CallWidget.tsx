@@ -13,7 +13,7 @@ const RING: Record<CallState, string> = {
   speaking: "border-sky-500 animate-pulse",
 };
 
-export default function CallWidget() {
+export default function CallWidget({ agentId }: { agentId: string }) {
   const [state, setState] = useState<CallState>("idle");
   const [session, setSession] = useState<Session | null>(null);
   const [muted, setMuted] = useState(false);
@@ -33,7 +33,7 @@ export default function CallWidget() {
     setError(null);
     setState("connecting");
     try {
-      const s = await startCall();
+      const s = await startCall(agentId);
       setSession(s);
 
       const AgoraRTC = (await import("agora-rtc-sdk-ng")).default;
@@ -81,7 +81,7 @@ export default function CallWidget() {
 
   if (state === "idle") {
     return (
-      <div className="fixed bottom-6 right-6 text-right">
+      <div className="text-right">
         {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
         <button
           onClick={join}
@@ -97,7 +97,7 @@ export default function CallWidget() {
   const ss = String(seconds % 60).padStart(2, "0");
 
   return (
-    <div className="fixed bottom-6 right-6 w-64 rounded-xl border border-neutral-200 bg-white p-5 text-center shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
+    <div className="w-64 rounded-xl border border-neutral-200 bg-white p-5 text-center shadow-xl dark:border-neutral-700 dark:bg-neutral-900">
       <div className={`mx-auto mb-3 h-14 w-14 rounded-full border-4 ${RING[state]}`} />
       <p className="text-sm capitalize">{state}</p>
       <p className="mb-4 text-xs text-neutral-500">

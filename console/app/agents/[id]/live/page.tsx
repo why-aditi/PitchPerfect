@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { subscribe } from "@/lib/events";
 import type { LeadState, RtmEvent } from "@/lib/types";
 
 type ToolCall = { name: string; result_summary: string; ts: number };
 
-export default function Dashboard() {
+export default function Live({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const [lead, setLead] = useState<LeadState | null>(null);
   const [tools, setTools] = useState<ToolCall[]>([]);
   const [changed, setChanged] = useState<string[]>([]);
@@ -14,7 +15,7 @@ export default function Dashboard() {
 
   useEffect(
     () =>
-      subscribe((e: RtmEvent) => {
+      subscribe(id, (e: RtmEvent) => {
         if (e.type === "lead_state") {
           const before = previous.current;
           setChanged(
@@ -33,18 +34,18 @@ export default function Dashboard() {
           setTools((t) => [{ ...e.data, ts: e.ts }, ...t].slice(0, 20));
         }
       }),
-    [],
+    [id],
   );
 
   return (
-    <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
+    <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-10">
       <h1 className="text-2xl font-semibold">Live call</h1>
+      <p className="font-mono text-xs text-neutral-500">{id}</p>
 
       <h2 className="mt-8 mb-2 text-sm uppercase tracking-wide text-neutral-500">Lead state</h2>
       {!lead ? (
         <p className="text-sm text-neutral-500">
-          No active session. The backend publishes these over RTM on{" "}
-          <code className="font-mono">&lt;channel&gt;-events</code>.
+          Waiting for a call. Events arrive on the backend stream for this agent.
         </p>
       ) : (
         <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
@@ -79,7 +80,7 @@ export default function Dashboard() {
 
       <h2 className="mt-8 mb-2 text-sm uppercase tracking-wide text-neutral-500">Transcript</h2>
       <p className="text-sm text-neutral-500">
-        Rendered from the engine&apos;s own transcript stream, not from our RTM events (PRD 6.2).
+        Rendered from the engine&apos;s own transcript stream, not from our events (PRD 6.2).
       </p>
     </main>
   );

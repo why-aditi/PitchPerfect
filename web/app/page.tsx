@@ -1,15 +1,18 @@
-import CallWidget from "@/components/CallWidget";
+import Script from "next/script";
 import { getPricing } from "@/lib/api";
 import type { Pricing } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
+const DEMO_AGENT = process.env.NEXT_PUBLIC_DEMO_AGENT_ID ?? "ag_demo";
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
 export default async function Home() {
-  // Same pricing.json the agent's get_pricing tool reads, so page and agent
-  // can never contradict each other (PRD 10).
+  // Same knowledge the agent's get_pricing tool reads, so the page and the agent
+  // cannot contradict each other (PRD 10.2).
   let pricing: Pricing | null = null;
   try {
-    pricing = await getPricing();
+    pricing = await getPricing(DEMO_AGENT);
   } catch {
     pricing = null;
   }
@@ -23,7 +26,8 @@ export default async function Home() {
         {!pricing ? (
           <p className="mt-10 rounded-lg border border-dashed p-6 text-sm text-neutral-500">
             Backend not reachable. Start it with{" "}
-            <code className="font-mono">uvicorn backend.main:app --reload</code>.
+            <code className="font-mono">uvicorn backend.main:app --reload</code> and seed the
+            demo agent with <code className="font-mono">python -m backend.seed</code>.
           </p>
         ) : (
           <section className="mt-10 grid gap-4 sm:grid-cols-3">
@@ -55,7 +59,12 @@ export default async function Home() {
           </section>
         )}
       </main>
-      <CallWidget />
+
+      {/*
+        The entire voice integration. This page bundles no widget code, no Agora SDK and
+        nothing from the console — if the embed breaks, this page shows it (PRD 10.2).
+      */}
+      <Script src={`${API}/embed.js?agent=${DEMO_AGENT}`} strategy="afterInteractive" />
     </>
   );
 }
