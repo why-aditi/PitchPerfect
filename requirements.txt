@@ -4,3 +4,4 @@ httpx
 asyncpg
 # no PyPI package builds AccessToken2 ("007") — see backend/token2.py
 python-dotenv
+pytest                 # tests/

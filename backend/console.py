@@ -115,36 +115,3 @@ async def remove_agent(agent_id: str, pp_console: str | None = Cookie(None)):
 async def agent_calls(agent_id: str, pp_console: str | None = Cookie(None)):
     require_session(pp_console)
     return await db.calls_for_agent(agent_id)
-
-
-if __name__ == "__main__":
-    # Auth and masking are the security-critical parts and need no database.
-    import fastapi
-    from fastapi.testclient import TestClient
-
-    CONSOLE_PASSWORD = "hunter2"
-    app = fastapi.FastAPI()
-    app.include_router(router)
-    c = TestClient(app)
-
-    # Route-level: an unauthenticated call is refused before any handler work happens.
-    assert c.get("/console/agents").status_code == 401, "unauthenticated read must be refused"
-    assert c.post("/console/login", json={"password": "wrong"}).status_code == 401
-    assert c.get("/console/agents").status_code == 401, "a failed login must not set a session"
-
-    assert c.post("/console/login", json={"password": "hunter2"}).status_code == 200
-    cookie = c.cookies.get(COOKIE)
-    assert cookie, "login must set the session cookie"
-
-    # Guard-level, so the check needs no database behind the protected routes.
-    require_session(cookie)
-    for bad in (None, "", "not.a.real.signature", cookie[:-4] + "aaaa"):
-        try:
-            require_session(bad)
-        except HTTPException:
-            continue
-        raise AssertionError(f"require_session accepted {bad!r}")
-
-    written = AgentSecrets(calcom_api_key="cal_live_secret", slack_webhook_url="https://hook")
-    assert "cal_live_secret" not in str(written.masked())
-    print("console.py ok")

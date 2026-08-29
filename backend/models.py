@@ -100,20 +100,3 @@ class AgentSecrets(BaseModel):
         for field in self.SECRET_FIELDS:
             out[field] = "set" if out.get(field) else None
         return out
-
-
-if __name__ == "__main__":
-    cfg = AgentConfig(persona=Persona(identity="Sells Vantage, a work management platform."))
-    assert cfg.voice.speaking_interrupt_duration_ms == 320
-    assert cfg.persona.objection_strategies["pricing"].startswith("Reframe")
-    assert cfg.tools_enabled.crm is True
-
-    # A round trip through jsonb must not lose or reshape anything.
-    assert AgentConfig(**cfg.model_dump()) == cfg
-
-    s = AgentSecrets(calcom_api_key="cal_live_abc", hubspot_token=None)
-    m = s.masked()
-    assert m["calcom_api_key"] == "set" and m["hubspot_token"] is None
-    assert "cal_live_abc" not in str(m), "a real token must never survive masking"
-    assert m["hubspot_pipeline"] == "default", "non-secret fields stay readable"
-    print("models.py ok")

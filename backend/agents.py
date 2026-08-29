@@ -1,0 +1,50 @@
+"""Resolves which agent a call belongs to, and caches its config for the call's life.
+
+Config is read on every turn. A free-tier Postgres cold start in the tool path would
+land directly on turn latency, so a call loads its agent once at /start-call and reads
+from memory after that (PRD 11). Editing an agent therefore takes effect on the next
+call, not mid-call, which is also the behaviour the console promises.
+"""
+from . import db
+from .models import AgentConfig, AgentSecrets
+
+_bound: dict[str, tuple[str, AgentConfig, AgentSecrets]] = {}
+
+
+async def load(agent_id: str) -> tuple[AgentConfig, AgentSecrets] | None:
+    """Read an agent from the database. Returns None if it does not exist."""
+    if not db.DATABASE_URL:
+        # ponytail: no database configured means serve the seed, so text-mode work and
+        # the demo site run before Postgres is provisioned. Remove once DATABASE_URL is set.
+        from .seed import DEMO_ID, demo_config
+        return (demo_config(), AgentSecrets()) if agent_id == DEMO_ID else None
+
+    agent = await db.get_agent(agent_id)
+    if agent is None:
+        return None
+    return agent["config"], await db.get_secrets(agent_id)
+
+
+async def bind(session_id: str, agent_id: str) -> tuple[AgentConfig, AgentSecrets] | None:
+    """Pin an agent's config to a session for the duration of the call."""
+    loaded = await load(agent_id)
+    if loaded is None:
+        return None
+    _bound[session_id] = (agent_id, *loaded)
+    return loaded
+
+
+def for_session(session_id: str) -> tuple[str, AgentConfig, AgentSecrets] | None:
+    return _bound.get(session_id)
+
+
+def release(session_id: str) -> None:
+    _bound.pop(session_id, None)
+
+
+def allowed_origin(origins: list[str], origin: str | None) -> bool:
+    """Agent ids are public — they sit in the embed snippet — so this is what stops a
+    stranger starting calls on someone else's agent (PRD 6.1)."""
+    if not origins:
+        return False  # an agent with no origins configured is not embeddable yet
+    return origin is not None and origin.rstrip("/") in {o.rstrip("/") for o in origins}
