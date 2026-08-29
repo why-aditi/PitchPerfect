@@ -68,14 +68,21 @@ backend/                 FastAPI — uvicorn backend.main:app --reload  (:8000)
   data/                  seed pricing.json, battlecards.json
 console/                 Next.js  (:3001)
   app/login/             one shared operator password
-  app/agents/            agent list
+  app/agents/            agent list: last updated, call count, last outcome, delete
   app/agents/[id]/       editor: Persona · Knowledge · Voice · Integrations · Embed
-  app/agents/[id]/live/  lead-state dashboard + tool-call chips
-  app/agents/[id]/escalations/
+  app/agents/[id]/live/  transcript + lead state + tool chips + outcome
+  app/agents/[id]/escalations/   rep queue, join the live channel with a mic
   app/widget/            chrome-free widget the embed iframe loads
+  components/ui.tsx      console primitives — every screen composes these
+  components/editor/     one component per editor tab
+  components/live/       state ring, transcript, lead panel, signals, demo script
+  lib/useCall.ts         the single Agora RTC lifecycle (call + observe modes)
+  lib/transcript.ts      decodes the engine's data-channel transcripts
   lib/                   api client, event stream, types mirrored from models.py
 web/                     Next.js  (:3000) — the Vantage demo site
-  app/page.tsx           pricing table + the embed script tag, nothing else
+  app/page.tsx           landing
+  app/pricing/           the tier table, generated from the agent's own knowledge
+  app/product/ customers/
 ```
 
 Both frontends rewrite `/api/*` to the backend, so the browser stays same-origin. That
@@ -92,6 +99,20 @@ them.
 **Origins.** Agent ids are public by necessity — they sit in the embed snippet — so
 `/start-call` rejects an `Origin` that is not on the agent's allowed list. That check, not
 the id, is what stops a stranger burning your Agora minutes.
+
+**Transcripts are read by joining the channel, not by asking the backend.** PRD 6.2 puts
+transcripts on the engine's own data channel and forbids the backend republishing them, so
+the live and rep views join the call to read one. `POST /console/observe` mints an RTC token
+for a channel that is already running — operator-gated, with a fresh uid each time so two
+operators watching one call do not evict each other. `lib/useCall.ts` is the only place the
+Agora lifecycle exists; the widget, the live view and the rep view are the same hook in two
+modes.
+
+**The embed is the whole integration on a customer's page.** `GET /embed.js` returns a
+loader that mounts the console's widget route in an iframe, collapsed to launcher size, and
+grows it on a `postMessage` the widget sends from a `ResizeObserver` — so the host page keeps
+its bottom-right corner clickable while the widget is idle. `/start-call` rejects an `Origin`
+that is not on the agent's allowed list (403), which is step 6 of the §15.2 acceptance run.
 
 **Events use SSE, not Agora RTM.** The engine's own transcript stream is what needs that
 channel; lead-state and outcome events are ours alone. `GET /events` streams the exact PRD

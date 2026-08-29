@@ -1,26 +1,66 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+  Vantage is committed light, on purpose. The console next door is a dark mission-control
+  surface and the two are shown side by side, so this file carries no dark variant and no
+  prefers-color-scheme block that could quietly inherit one.
+*/
+
+@theme {
+  --color-ground: #faf7f1;
+  --color-paper: #ffffff;
+  --color-sand: #f2ece1;
+
+  --color-ink: #16130f;
+  --color-ink-muted: #6b6358;
+  --color-ink-faint: #9c9488;
+
+  --color-rule: #e8e1d5;
+  --color-rule-strong: #d5cbba;
+
+  --color-brand: #0e5049;
+  --color-brand-deep: #082e29;
+  --color-brand-soft: #e2eeeb;
+
+  --color-accent: #c1521f;
+  --color-accent-soft: #fbeade;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-instrument-serif);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  color-scheme: light;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background-color: var(--color-brand-soft);
+  color: var(--color-brand-deep);
+}
+
+/* One focus treatment everywhere, so keyboard users get the same affordance on a link,
+   a button and a card that happens to be a link. */
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* Faint paper grain: two very low-contrast radial washes, so the off-white ground does not
+   read as a flat #fff screenshot. Cheap enough to sit on the body. */
+.grain {
+  background-image:
+    radial-gradient(60rem 40rem at 12% -10%, rgba(14, 80, 73, 0.06), transparent 60%),
+    radial-gradient(50rem 32rem at 92% 0%, rgba(193, 82, 31, 0.05), transparent 60%);
 }

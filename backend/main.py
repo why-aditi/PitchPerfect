@@ -9,9 +9,9 @@ import secrets
 import time
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
 load_dotenv()
@@ -25,6 +25,7 @@ app.include_router(proxy.router)
 app.include_router(console.router)
 
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
+CONSOLE_URL = os.getenv("CONSOLE_URL", "http://localhost:3001")
 SESSIONS: dict[str, dict] = {}
 AGENT_UID, PROSPECT_UID = "1001", "1002"
 
@@ -32,14 +33,36 @@ AGENT_UID, PROSPECT_UID = "1001", "1002"
 class StartCall(BaseModel):
     prospect_name: str | None = None
     page_context: str = "pricing"
+    agent_id: str | None = None
 
 
 class StopCall(BaseModel):
     session_id: str
 
 
+async def check_origin(agent_id: str | None, origin: str | None) -> None:
+    """PRD 6.5: agent ids are public by necessity — they sit in the embed snippet — so the
+    allowed-origins list, not the id, is what stops a stranger burning your Agora minutes.
+
+    A request with no Origin header is same-origin or a curl, and is left alone: the console
+    and the text-mode test scripts both call this endpoint directly.
+    """
+    if not agent_id or origin is None:
+        return
+    from . import db
+    if not db.DATABASE_URL:
+        return
+    agent = await db.get_agent(agent_id)
+    if agent is None:
+        raise HTTPException(404, "no such agent")
+    allowed = agent["allowed_origins"]
+    if allowed and origin not in allowed:
+        raise HTTPException(403, f"origin {origin} is not on this agent's allowed list")
+
+
 @app.post("/start-call")
-async def start_call(req: StartCall):
+async def start_call(req: StartCall, request: Request):
+    await check_origin(req.agent_id, request.headers.get("origin"))
     session_id = f"sess_{secrets.token_hex(2)}"
     channel = rtm.channel_for(session_id)
     token = agora.build_token(channel, int(PROSPECT_UID))
@@ -84,6 +107,61 @@ async def events():
 
     return StreamingResponse(pump(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+EMBED_JS = """/* PitchPilot embed loader. The whole integration on a customer's site is the script tag
+   that fetched this file (PRD 6.5).
+
+   An iframe rather than an inline widget: style isolation from the host page, no CSP
+   negotiation, and the Agora SDK stays off the host's global scope. The cost is that the
+   microphone prompt needs the host page on HTTPS with the allow attribute intact.
+
+   The iframe is mounted collapsed to launcher size and resizes on a postMessage from the
+   widget, so the host page keeps its bottom-right corner clickable while the widget is
+   idle. If that message never arrives the panel size is used, which is wrong-looking but
+   never broken. */
+(function () {
+  var CONSOLE = "__CONSOLE__";
+  var script = document.currentScript;
+  var agent = new URL(script.src).searchParams.get("agent");
+  if (!agent) return console.error("[pitchpilot] embed script has no ?agent= parameter");
+  if (document.getElementById("pitchpilot-frame")) return;
+
+  var frame = document.createElement("iframe");
+  frame.id = "pitchpilot-frame";
+  frame.title = "Talk to sales";
+  frame.allow = "microphone";
+  frame.src = CONSOLE + "/widget?agent=" + encodeURIComponent(agent);
+  frame.style.cssText = [
+    "position:fixed", "right:20px", "bottom:20px", "z-index:2147483000",
+    "border:0", "background:transparent", "color-scheme:normal",
+    "width:220px", "height:76px",
+    "transition:width .18s ease,height .18s ease"
+  ].join(";");
+
+  window.addEventListener("message", function (event) {
+    if (new URL(CONSOLE).origin !== event.origin) return;
+    var data = event.data;
+    if (!data || data.source !== "pitchpilot" || data.type !== "resize") return;
+    frame.style.width = Math.round(data.width) + "px";
+    frame.style.height = Math.round(data.height) + "px";
+  });
+
+  (document.body || document.documentElement).appendChild(frame);
+})();
+"""
+
+
+@app.get("/embed.js")
+def embed_js():
+    """No Subresource Integrity hash on the snippet: the loader is first-party and meant to
+    be redeployed, and a pinned hash would break every existing embed on the next deploy
+    (PRD 6.5). The allowed-origins check on /start-call is the control on this surface."""
+    return PlainTextResponse(
+        EMBED_JS.replace("__CONSOLE__", CONSOLE_URL.rstrip("/")),
+        media_type="application/javascript",
+        headers={"Cache-Control": "public, max-age=60"},
+    )
 
 
 @app.get("/lead-state/{session_id}")

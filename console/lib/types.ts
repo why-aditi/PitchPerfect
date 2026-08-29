@@ -123,3 +123,16 @@ export type RtmEvent =
   | { type: "call_ended"; session_id: string; ts: number; data: { duration_s: number } };
 
 export type CallState = "idle" | "connecting" | "listening" | "thinking" | "speaking";
+
+export type CallRecord = {
+  session_id: string;
+  started_at: string;
+  ended_at: string | null;
+  duration_s: number | null;
+  outcome: string | null;
+  lead_state: LeadState | null;
+};
+
+/** Derived, not sent: sess_8f2a -> pitchpilot-8f2a, minted from the same suffix in main.py. */
+export const channelFor = (sessionId: string) =>
+  `pitchpilot-${sessionId.replace(/^sess_/, "")}`;

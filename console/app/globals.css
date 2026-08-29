@@ -1,26 +1,59 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+  PitchPilot console — mission control.
+  Committed dark: this surface is watched during a live call, next to a transcript that
+  moves. Light chrome competes with the signal colours the ring and the lead-state panel
+  depend on, so there is no light variant to keep in sync.
+*/
+@theme {
+  --color-surface: #0b0d10;
+  --color-panel: #14181d;
+  --color-raised: #1b2027;
+  --color-line: #262d36;
+  --color-line-soft: #1d232a;
+
+  --color-ink: #e8ecf1;
+  --color-muted: #94a0b0;
+  --color-faint: #5f6b7a;
+
+  /* One accent, four call states. The states are the product; the accent is the chrome. */
+  --color-brand: #5b8cff;
+  --color-brand-dim: #2f4a91;
+
+  --color-listening: #00e5a0;
+  --color-thinking: #ffb020;
+  --color-speaking: #5b8cff;
+  --color-escalate: #ff5c7a;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
 }
+
+/* Values that just changed pulse once rather than staying highlighted — a permanent
+   highlight stops meaning "new" about four events in. */
+@keyframes flash {
+  from { background-color: color-mix(in oklab, var(--color-brand) 28%, transparent); }
+  to   { background-color: transparent; }
+}
+.flash { animation: flash 1.4s ease-out; }
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+.rise { animation: rise 0.22s ease-out; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--color-line); border-radius: 99px; }
+::-webkit-scrollbar-track { background: transparent; }

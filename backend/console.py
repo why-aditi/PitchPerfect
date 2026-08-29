@@ -34,6 +34,11 @@ class AgentWrite(BaseModel):
     allowed_origins: list[str] = []
 
 
+class Observe(BaseModel):
+    agent_id: str
+    channel: str
+
+
 def require_session(session: str | None) -> None:
     """Raises 401 unless the cookie is a valid, unexpired session."""
     if not CONSOLE_PASSWORD:
@@ -109,6 +114,35 @@ async def remove_agent(agent_id: str, pp_console: str | None = Cookie(None)):
     require_session(pp_console)
     await db.delete_agent(agent_id)
     return {"ok": True}
+
+
+@router.post("/observe")
+async def observe(body: Observe, pp_console: str | None = Cookie(None)):
+    """An RTC token for a channel that is already running, so the console can join a call
+    without placing one.
+
+    PRD 6.2 keeps transcripts on the engine's data channel and forbids the backend from
+    republishing them, so the live and rep views can only read a transcript by being in the
+    channel. Operator-gated, and a fresh uid every time: two operators watching the same
+    call must not collide on one uid, which would drop the first out of the channel.
+    """
+    require_session(pp_console)
+    from . import agora, rtm
+
+    if not body.channel.startswith(rtm.CHANNEL_PREFIX):
+        raise HTTPException(400, "not a PitchPilot channel")
+
+    uid = pysecrets.randbelow(900_000) + 100_000  # well clear of the fixed 1001/1002
+    try:
+        token = agora.build_token(body.channel, uid)
+    except ValueError as e:
+        # Missing or malformed Agora credentials are a deployment problem, not a bug in the
+        # request. Saying so is worth a branch: the console renders this message verbatim,
+        # and "500" in the live view tells an operator nothing they can act on.
+        raise HTTPException(503, f"Agora credentials are not configured: {e}") from None
+    return {"app_id": agora.APP_ID, "channel": body.channel,
+            "rtc_token": token, "uid": str(uid),
+            "session_id": "", "agent_id": "", "agent_rtc_uid": "1001"}
 
 
 @router.get("/agents/{agent_id}/calls")

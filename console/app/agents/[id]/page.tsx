@@ -1,14 +1,21 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createAgent, getAgent, saveAgent } from "@/lib/api";
-import type { AgentConfig } from "@/lib/types";
+import { createAgent, getAgent, saveAgent, saveSecrets } from "@/lib/api";
+import type { AgentConfig, Knowledge, Persona, SecretsSet, ToolsEnabled, Voice } from "@/lib/types";
+import { Badge, Button, Tabs } from "@/components/ui";
+import { EmbedTab, originError } from "@/components/editor/EmbedTab";
+import { IntegrationsTab, type SecretDraft } from "@/components/editor/IntegrationsTab";
+import { KnowledgeTab } from "@/components/editor/KnowledgeTab";
+import { PersonaTab } from "@/components/editor/PersonaTab";
+import { VoiceTab } from "@/components/editor/VoiceTab";
 
 const TABS = ["Persona", "Knowledge", "Voice", "Integrations", "Embed"] as const;
 type Tab = (typeof TABS)[number];
 
+/** A new agent starts from the same defaults models.py would have given it. */
 const BLANK: AgentConfig = {
   persona: {
     identity: "",
@@ -41,8 +48,9 @@ const BLANK: AgentConfig = {
   llm_model: "llama-3.3-70b-versatile",
 };
 
-const field =
-  "w-full rounded-md border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900";
+/** What "unsaved" is measured against: the shape the server last confirmed. */
+type Snapshot = { name: string; config: AgentConfig; origins: string[] };
+const fingerprint = (s: Snapshot) => JSON.stringify(s);
 
 export default function AgentEditor({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -52,225 +60,219 @@ export default function AgentEditor({ params }: { params: Promise<{ id: string }
   const [tab, setTab] = useState<Tab>("Persona");
   const [name, setName] = useState("");
   const [config, setConfig] = useState<AgentConfig | null>(isNew ? BLANK : null);
-  const [origins, setOrigins] = useState("");
-  const [status, setStatus] = useState<string | null>(null);
+  const [origins, setOrigins] = useState<string[]>([]);
+  const [secrets, setSecrets] = useState<SecretsSet | null>(null);
+  const [secretDraft, setSecretDraft] = useState<SecretDraft>({});
+  const [saved, setSaved] = useState<string>(() =>
+    isNew ? fingerprint({ name: "", config: BLANK, origins: [] }) : "",
+  );
+
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (isNew) return;
-    getAgent(id).then((a) => {
-      setName(a.name);
-      setConfig(a.config);
-      setOrigins(a.allowed_origins.join("\n"));
-    });
+    getAgent(id)
+      .then((a) => {
+        setName(a.name);
+        setConfig(a.config);
+        setOrigins(a.allowed_origins);
+        setSecrets(a.secrets_set);
+        setSaved(fingerprint({ name: a.name, config: a.config, origins: a.allowed_origins }));
+      })
+      .catch((e) => setLoadError(e instanceof Error ? e.message : "could not load this agent"));
   }, [id, isNew]);
 
-  if (!config) return <main className="flex-1 px-6 py-10 text-sm text-neutral-500">Loading…</main>;
+  const current = useMemo(
+    () => (config ? fingerprint({ name, config, origins }) : ""),
+    [name, config, origins],
+  );
+  const configDirty = Boolean(config) && current !== saved;
+  const secretsDirty = Object.keys(secretDraft).length > 0;
+  const dirty = configDirty || secretsDirty;
 
-  const persona = config.persona;
-  const setPersona = (patch: Partial<AgentConfig["persona"]>) =>
-    setConfig({ ...config, persona: { ...persona, ...patch } });
+  // Config is read fresh on every call, so an unsaved edit is an edit that is not live.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  /** Every tab owns one section of the config and patches only that section. */
+  const patchConfig = useCallback(
+    <K extends "persona" | "voice" | "knowledge" | "tools_enabled">(
+      key: K,
+      patch: Partial<AgentConfig[K]>,
+    ) => setConfig((c) => (c ? { ...c, [key]: { ...(c[key] as object), ...patch } } : c)),
+    [],
+  );
+
+  const setSecretField = useCallback(
+    (key: string, value: string | null | undefined) =>
+      setSecretDraft((d) => {
+        const next = { ...d };
+        if (value === undefined) delete next[key];
+        else next[key] = value;
+        return next;
+      }),
+    [],
+  );
+
+  if (loadError) {
+    return (
+      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
+        <p className="rounded-xl border border-escalate/30 bg-escalate/5 px-4 py-3 text-sm text-escalate">
+          {loadError}
+        </p>
+        <Link href="/agents" className="mt-4 inline-block text-sm text-muted hover:text-ink">
+          Back to agents
+        </Link>
+      </main>
+    );
+  }
+
+  if (!config) {
+    return <main className="flex-1 px-6 py-10 text-sm text-muted">Loading…</main>;
+  }
+
+  const badOrigin = origins.some((o) => o.trim() && originError(o));
+  const blocked = !name.trim()
+    ? "Give the agent a name first."
+    : badOrigin
+      ? "One of the allowed origins is not a valid origin — see the Embed tab."
+      : null;
 
   async function save() {
-    const list = origins.split("\n").map((o) => o.trim()).filter(Boolean);
-    setStatus("Saving…");
+    if (!config || blocked || saving) return;
+    const list = origins.map((o) => o.trim()).filter(Boolean);
+    setSaving(true);
+    setSaveError(null);
+    setNote(null);
     try {
+      let target = id;
       if (isNew) {
-        const { id: created } = await createAgent(name, config!, list);
-        router.push(`/agents/${created}`);
+        const created = await createAgent(name, config, list);
+        target = created.id;
       } else {
-        await saveAgent(id, name, config!, list);
-        setStatus("Saved. The next call uses these values — no redeploy.");
+        await saveAgent(id, name, config, list);
       }
+      // Separate endpoint, and deliberately so: credentials are write-only and never travel
+      // with the config the console can read back.
+      if (Object.keys(secretDraft).length > 0) {
+        setSecrets(await saveSecrets(target, secretDraft));
+        setSecretDraft({});
+      }
+      if (isNew) {
+        router.push(`/agents/${target}`);
+        return;
+      }
+      setOrigins(list);
+      setSaved(fingerprint({ name, config, origins: list }));
+      setNote("Saved. The next call reads these values — no redeploy.");
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : "save failed");
+      setSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
     }
   }
 
+  const saveLabel = saving
+    ? "Saving…"
+    : isNew
+      ? "Create agent"
+      : !dirty
+        ? "No changes"
+        : configDirty && secretsDirty
+          ? "Save changes and credentials"
+          : secretsDirty
+            ? "Save credentials"
+            : "Save changes";
+
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
-      <div className="flex items-center justify-between">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Agent name"
-          className="border-0 bg-transparent text-2xl font-semibold outline-none"
-        />
+      <div className="flex items-start justify-between gap-6">
+        <div className="min-w-0 flex-1">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Agent name"
+            aria-label="Agent name"
+            className="w-full border-0 bg-transparent text-2xl font-semibold text-ink outline-none placeholder:text-faint"
+          />
+          <div className="mt-1 flex items-center gap-3">
+            <span className="font-mono text-xs text-faint">{isNew ? "unsaved" : id}</span>
+            {dirty && !isNew && <Badge tone="warn">unsaved changes</Badge>}
+          </div>
+        </div>
         {!isNew && (
-          <div className="flex gap-4 text-sm text-neutral-500">
-            <Link href={`/agents/${id}/live`} className="hover:underline">Live</Link>
-            <Link href={`/agents/${id}/escalations`} className="hover:underline">Escalations</Link>
+          <div className="flex shrink-0 gap-4 pt-1 text-sm text-muted">
+            <Link href={`/agents/${id}/live`} className="hover:text-ink">
+              Live
+            </Link>
+            <Link href={`/agents/${id}/escalations`} className="hover:text-ink">
+              Escalations
+            </Link>
           </div>
         )}
       </div>
 
-      <nav className="mt-6 flex gap-1 border-b border-neutral-200 dark:border-neutral-800">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-3 py-2 text-sm ${
-              tab === t ? "border-b-2 border-emerald-600 font-medium" : "text-neutral-500"
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </nav>
+      <div className="mt-6">
+        <Tabs tabs={TABS} active={tab} onSelect={setTab} />
+      </div>
 
-      <section className="mt-6 space-y-4">
+      <section className="mt-8 pb-8">
         {tab === "Persona" && (
-          <>
-            <label className="block text-sm">
-              Identity
-              <textarea
-                rows={4}
-                value={persona.identity}
-                onChange={(e) => setPersona({ identity: e.target.value })}
-                className={`mt-1 ${field}`}
-                placeholder="Who this agent sells for, in one paragraph."
-              />
-            </label>
-            <label className="block text-sm">
-              Greeting — spoken by the engine, carries the AI disclosure
-              <textarea
-                rows={2}
-                value={persona.greeting}
-                onChange={(e) => setPersona({ greeting: e.target.value })}
-                className={`mt-1 ${field}`}
-              />
-            </label>
-            {(["pricing", "trust", "product", "competitor"] as const).map((k) => (
-              <label key={k} className="block text-sm capitalize">
-                {k} objection
-                <textarea
-                  rows={2}
-                  value={persona.objection_strategies[k]}
-                  onChange={(e) =>
-                    setPersona({
-                      objection_strategies: { ...persona.objection_strategies, [k]: e.target.value },
-                    })
-                  }
-                  className={`mt-1 ${field}`}
-                />
-              </label>
-            ))}
-            <label className="block text-sm">
-              Escalate above this many seats
-              <input
-                type="number"
-                value={persona.escalation_seat_threshold}
-                onChange={(e) => setPersona({ escalation_seat_threshold: Number(e.target.value) })}
-                className={`mt-1 ${field}`}
-              />
-            </label>
-            <p className="text-xs text-neutral-500">
-              Not editable, and deliberately so: never invent a price or a date, say so when a tool
-              has no data, two or three sentences per turn, and drop the interrupted point rather
-              than resuming it. Those are the guarantees the product makes.
-            </p>
-          </>
+          <PersonaTab
+            persona={config.persona}
+            onChange={(patch: Partial<Persona>) => patchConfig("persona", patch)}
+          />
         )}
-
         {tab === "Knowledge" && (
-          <>
-            <p className="text-sm text-neutral-500">
-              The only prices and competitor claims this agent may speak. Everything here is
-              returned by a tool call, never recalled by the model.
-            </p>
-            <label className="block text-sm">
-              Pricing tiers (JSON)
-              <textarea
-                rows={12}
-                value={JSON.stringify(config.knowledge.tiers, null, 2)}
-                onChange={(e) => {
-                  try {
-                    setConfig({
-                      ...config,
-                      knowledge: { ...config.knowledge, tiers: JSON.parse(e.target.value) },
-                    });
-                    setStatus(null);
-                  } catch {
-                    setStatus("Tiers: invalid JSON, not applied");
-                  }
-                }}
-                className={`mt-1 font-mono ${field}`}
-              />
-            </label>
-            <label className="block text-sm">
-              Battlecards (JSON)
-              <textarea
-                rows={10}
-                value={JSON.stringify(config.knowledge.battlecards, null, 2)}
-                onChange={(e) => {
-                  try {
-                    setConfig({
-                      ...config,
-                      knowledge: { ...config.knowledge, battlecards: JSON.parse(e.target.value) },
-                    });
-                    setStatus(null);
-                  } catch {
-                    setStatus("Battlecards: invalid JSON, not applied");
-                  }
-                }}
-                className={`mt-1 font-mono ${field}`}
-              />
-            </label>
-          </>
+          <KnowledgeTab
+            knowledge={config.knowledge}
+            onChange={(patch: Partial<Knowledge>) => patchConfig("knowledge", patch)}
+          />
         )}
-
         {tab === "Voice" && (
-          <p className="text-sm text-neutral-500">
-            Turn-detection and TTS tuning. Phase 7 — the values below are live and already drive
-            the engine payload; the form for them is not built yet.
-            <br />
-            <span className="font-mono text-xs">
-              speaking_interrupt_duration_ms = {config.voice.speaking_interrupt_duration_ms} · raise
-              it if &quot;mm-hmm&quot; cuts the agent off
-            </span>
-          </p>
+          <VoiceTab
+            voice={config.voice}
+            onChange={(patch: Partial<Voice>) => patchConfig("voice", patch)}
+          />
         )}
-
         {tab === "Integrations" && (
-          <p className="text-sm text-neutral-500">
-            Cal.com, HubSpot and Slack credentials plus per-tool switches. Phase 7. Values are
-            write-only over the API and always read back as &quot;set&quot;, never as the token.
-          </p>
+          <IntegrationsTab
+            isNew={isNew}
+            secrets={secrets}
+            draft={secretDraft}
+            onDraft={setSecretField}
+            tools={config.tools_enabled}
+            onTools={(patch: Partial<ToolsEnabled>) => patchConfig("tools_enabled", patch)}
+          />
         )}
-
         {tab === "Embed" && (
-          <>
-            <label className="block text-sm">
-              Allowed origins — one per line. A call from an origin not listed here is refused.
-              <textarea
-                rows={4}
-                value={origins}
-                onChange={(e) => setOrigins(e.target.value)}
-                placeholder="https://example.com"
-                className={`mt-1 font-mono ${field}`}
-              />
-            </label>
-            <label className="block text-sm">
-              Embed snippet
-              <textarea
-                readOnly
-                rows={2}
-                value={
-                  isNew
-                    ? "Save the agent to get its snippet."
-                    : `<script src="${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/embed.js?agent=${id}" async></script>`
-                }
-                className={`mt-1 font-mono ${field}`}
-              />
-            </label>
-          </>
+          <EmbedTab id={id} isNew={isNew} origins={origins} onChange={setOrigins} />
         )}
       </section>
 
-      <div className="mt-8 flex items-center gap-4">
-        <button onClick={save} className="rounded-md bg-emerald-600 px-4 py-2 text-sm text-white">
-          {isNew ? "Create agent" : "Save"}
-        </button>
-        {status && <span className="text-sm text-neutral-500">{status}</span>}
+      <div className="sticky bottom-0 -mx-6 border-t border-line bg-surface/95 px-6 py-4 backdrop-blur">
+        <div className="flex items-center gap-4">
+          <Button onClick={save} disabled={saving || Boolean(blocked) || (!isNew && !dirty)}>
+            {saveLabel}
+          </Button>
+          <span className="text-xs text-muted">
+            {blocked ??
+              note ??
+              (dirty
+                ? "Not live yet. The running config is whatever was saved last."
+                : "In sync with the server.")}
+          </span>
+        </div>
+        {saveError && (
+          <p className="mt-2 font-mono text-xs text-escalate">{saveError}</p>
+        )}
       </div>
     </main>
   );

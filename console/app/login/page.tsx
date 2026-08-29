@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "@/lib/api";
+import { Mark, Wordmark } from "@/components/Nav";
+import { Button, Card, Dot, Field, Input } from "@/components/ui";
 
 export default function Login() {
   const router = useRouter();
@@ -25,30 +27,49 @@ export default function Login() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6">
-      <h1 className="text-2xl font-semibold">Sign in</h1>
-      <p className="mt-1 text-sm text-neutral-500">
-        One shared operator password. It gates every route that can read or write
-        integration credentials.
-      </p>
-      <form onSubmit={submit} className="mt-6 space-y-3">
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password"
-          autoFocus
-          className="w-full rounded-md border border-neutral-300 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-900"
-        />
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          type="submit"
-          disabled={busy || !password}
-          className="w-full rounded-md bg-emerald-600 px-4 py-2 text-white disabled:opacity-50"
-        >
-          {busy ? "Checking…" : "Sign in"}
-        </button>
-      </form>
+    <main className="flex flex-1 items-center justify-center px-6 py-16">
+      <div className="rise w-full max-w-[380px]">
+        <div className="flex flex-col items-center text-center">
+          <Mark className="h-11 w-11 text-brand" />
+          <h1 className="mt-4 text-lg">
+            <Wordmark /> <span className="text-muted">console</span>
+          </h1>
+          <p className="mt-2 text-sm leading-relaxed text-muted">
+            One shared operator password gates every route in here, including the ones that
+            can write a Cal.com key or a HubSpot token onto an agent.
+          </p>
+        </div>
+
+        <Card className="mt-6 p-5">
+          <form onSubmit={submit} className="space-y-4">
+            <Field label="Operator password">
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••••"
+                autoFocus
+                autoComplete="current-password"
+              />
+            </Field>
+
+            {error && (
+              <p role="alert" className="flex items-center gap-2 text-sm text-escalate">
+                <Dot tone="var(--color-escalate)" />
+                {error}
+              </p>
+            )}
+
+            <Button type="submit" disabled={busy || !password} className="w-full">
+              {busy ? "Checking…" : "Sign in"}
+            </Button>
+          </form>
+        </Card>
+
+        <p className="mt-4 text-center font-mono text-[11px] text-faint">
+          CONSOLE_PASSWORD · set in the backend environment
+        </p>
+      </div>
     </main>
   );
 }

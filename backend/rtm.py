@@ -14,10 +14,13 @@ _subscribers: list = []          # in-process listeners (tests)
 _queues: list[asyncio.Queue] = []  # connected SSE clients
 
 
+CHANNEL_PREFIX = "pitchpilot-"
+
+
 def channel_for(session_id: str) -> str:
     """sess_8f2a -> pitchpilot-8f2a. Both are minted from the same suffix in main.py,
     so nothing has to carry the mapping around."""
-    return f"pitchpilot-{session_id.removeprefix('sess_')}"
+    return f"{CHANNEL_PREFIX}{session_id.removeprefix('sess_')}"
 
 
 def events_channel(session_id: str) -> str:
