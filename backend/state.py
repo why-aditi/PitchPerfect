@@ -42,8 +42,42 @@ def update(session_id: str, **fields) -> dict:
             state["bant"].update({k: v for k, v in value.items() if k in state["bant"]})
         else:
             state[key] = value
+    # The derived scores are a floor, never a ceiling: the model sees the conversation and
+    # may score higher than the recorded signals prove, and that judgement is kept. The
+    # floor only ever raises a score, so evidence accumulates across a call.
+    derived = derive_bant(state)
+    state["bant"] = {k: max(v, derived[k]) for k, v in state["bant"].items()}
     state["qualification"] = qualify(state["bant"])
     return state
+
+
+_BUDGET_SCORE = {"under_budget": 3, "stretch": 2, "over_budget": 1}
+_TIMELINE_SCORE = {"now": 3, "this_quarter": 2, "exploring": 1}
+
+
+def derive_bant(state: dict) -> dict:
+    """Floor scores from what the call has actually established.
+
+    Left to itself the model fills the other fields reliably and almost never scores BANT,
+    so qualification stayed cold on calls that booked a demo. Anything the conversation has
+    already proved is scored here instead of asked for twice; authority has no such signal,
+    so it stays the model's judgement to make.
+    """
+    need = 0
+    if state.get("seat_count"):
+        need = 2
+    if state.get("use_case") or state.get("competitor_mentions"):
+        need = 3 if need else 2      # comparing vendors is an active evaluation
+
+    budget = _BUDGET_SCORE.get(state.get("budget_signal"), 0)
+    if "pricing" in state.get("objections_raised", []):
+        budget = max(budget, 1)      # they pushed back on price, so a budget exists
+
+    timeline = _TIMELINE_SCORE.get(state.get("timeline"), 0)
+    if state.get("next_action") == "book_demo":
+        timeline = max(timeline, 2)  # they agreed to a date, which is the strongest signal
+
+    return {"budget": budget, "authority": 0, "need": need, "timeline": timeline}
 
 
 def qualify(bant: dict) -> str:

@@ -43,7 +43,11 @@ SPECS = [
          "company": {"type": "string"}, "email": {"type": "string"},
          "industry": {"type": "string"}, "use_case": {"type": "string"},
          "seat_count": {"type": "integer"},
-         "budget_signal": {"enum": ["under_budget", "stretch", "over_budget"]},
+         # Named from our price's point of view, which a model will otherwise read the
+         # other way round: a live run recorded "we budgeted less than that" as under_budget.
+         "budget_signal": {"enum": ["under_budget", "stretch", "over_budget"],
+                           "description": "our price vs their budget: under_budget fits, "
+                                          "stretch is tight, over_budget is too expensive"},
          "timeline": {"enum": ["now", "this_quarter", "exploring"]},
          "objections_raised": {"type": "array", "items": {"type": "string"}},
          "competitor_mentions": {"type": "array", "items": {"type": "string"}},

@@ -206,3 +206,12 @@ def restore_complete():
     original = proxy.complete
     yield
     proxy.complete = original
+
+
+def test_rebooking_does_not_announce_a_second_outcome(bound, events):
+    """A live run booked once and reported meeting_booked twice, because the idempotent
+    path still looked like a success."""
+    args = {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "a@b.test"}
+    proxy.run_tool(bound, "book_meeting", args)
+    proxy.run_tool(bound, "book_meeting", args)
+    assert [e["data"]["kind"] for e in events if e["type"] == "outcome"] == ["meeting_booked"]

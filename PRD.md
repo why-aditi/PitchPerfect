@@ -234,6 +234,12 @@ One per session, held in memory during the call, written to the `calls` row at t
 - Only `update_lead_state` writes to it. The model never edits it directly in text.
 - Partial updates merge; arrays append without duplicates; a null never clears a set value.
 - Every write publishes a `lead_state` event and updates the CRM contact (debounced: at most once every 10 s, plus once at call end). With no email there is no stable CRM identity, so the state is held in memory until one arrives.
+- BANT scores are floored from what the call has established: `budget_signal` and
+  `timeline` map to their scale, and a known seat count or use case scores need.
+  The model may score higher, since it hears what the record does not, and that
+  judgement is kept; the floor only ever raises a score. Authority has no recorded
+  signal, so it stays the model's to set. Left to itself the model fills every other
+  field and almost never scores BANT, which left demo-booking calls reading as cold.
 - `qualification` is derived from the BANT sum: 9 or more is hot, 5 or more is warm, else cold.
 
 ---

@@ -90,8 +90,10 @@ async def main():
     assert lead["objections_raised"] == ["pricing"], lead["objections_raised"]
     assert lead["competitor_mentions"] == ["Northbeam"], lead["competitor_mentions"]
     assert lead["budget_signal"] == "over_budget"
-    # BANT 2+2+2+3 = 9 -> hot, derived, never set by the model.
-    assert lead["bant"] == {"budget": 2, "authority": 2, "need": 2, "timeline": 3}, lead["bant"]
+    # The model scored budget 2, authority 2, need 2, timeline 3. need is floored up to 3
+    # because a competitor was named and a seat count is known, which is an active
+    # evaluation. 2+2+3+3 = 10 -> hot. qualification is always derived, never model-set.
+    assert lead["bant"] == {"budget": 2, "authority": 2, "need": 3, "timeline": 3}, lead["bant"]
     assert lead["qualification"] == "hot", lead["qualification"]
     assert lead["next_action"] == "book_demo", lead["next_action"]
 

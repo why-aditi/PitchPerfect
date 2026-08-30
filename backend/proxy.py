@@ -132,7 +132,9 @@ def _dispatch(sid: str, name: str, args: dict) -> dict:
 
     if name == "book_meeting":
         result = tools.book_meeting(secrets, session_id=sid, **args)
-        if "error" not in result:
+        # already_booked is the idempotent path: the booking stands, but re-announcing it
+        # would put a second meeting_booked on the console for one demo.
+        if "error" not in result and not result.get("already_booked"):
             lead = state.update(sid, next_action="book_demo", email=args.get("email"))
             rtm.publish(sid, "lead_state", lead)
             tools.create_deal(secrets, lead, result)

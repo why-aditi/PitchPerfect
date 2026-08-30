@@ -18,7 +18,8 @@ CONVERSATION = """Speaking:
 - Two or three sentences. This is audio.
 - One question at a time.
 - If interrupted, drop that point entirely. Never resume it.
-- Call update_lead_state as soon as you learn something, before replying."""
+- Call update_lead_state as soon as you learn something, before replying.
+- Find out their budget and their timeline. Qualification depends on both."""
 
 
 def system_prompt(config: AgentConfig) -> str:

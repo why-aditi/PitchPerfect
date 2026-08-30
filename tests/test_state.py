@@ -92,3 +92,94 @@ def test_drop_returns_and_forgets():
     assert state.drop("s")["seat_count"] == 5
     assert state.drop("s") is None
     assert state.get("s")["seat_count"] is None
+
+
+# --- derived BANT ----------------------------------------------------------------------
+# Left to itself the model fills every other field and almost never scores BANT, so a call
+# that booked a demo still read as cold. Anything the conversation has proved is scored
+# from the record instead.
+
+def test_recorded_signals_score_themselves():
+    s = state.update("s", seat_count=200, use_case="onboarding",
+                     budget_signal="stretch", timeline="this_quarter")
+    assert s["bant"] == {"budget": 2, "authority": 0, "need": 3, "timeline": 2}
+    assert s["qualification"] == "warm"
+
+
+def test_seat_count_alone_is_partial_need():
+    assert state.update("s", seat_count=50)["bant"]["need"] == 2
+
+
+def test_authority_is_left_to_the_model():
+    """Nothing we record proves who can sign, so it is never derived."""
+    assert state.update("s", seat_count=200, use_case="x",
+                        budget_signal="under_budget", timeline="now")["bant"]["authority"] == 0
+    assert state.update("s", bant={"authority": 3})["bant"]["authority"] == 3
+
+
+def test_the_model_may_score_above_the_derived_floor():
+    state.update("s", budget_signal="over_budget")          # floor of 1
+    assert state.update("s", bant={"budget": 3})["bant"]["budget"] == 3
+
+
+def test_the_model_cannot_score_below_the_derived_floor():
+    state.update("s", timeline="now")                       # floor of 3
+    assert state.update("s", bant={"timeline": 0})["bant"]["timeline"] == 3
+
+
+def test_a_booked_demo_no_longer_reads_as_cold():
+    """The live failure this fixes: every other field populated, qualification still cold."""
+    s = state.update("s", seat_count=200, budget_signal="over_budget",
+                     timeline="this_quarter", use_case="rollout", next_action="book_demo")
+    assert s["qualification"] != "cold", s["bant"]
+
+
+def test_nothing_learned_scores_nothing():
+    assert state.update("s", company="Acme")["bant"] == {
+        "budget": 0, "authority": 0, "need": 0, "timeline": 0}
+    assert state.get("s")["qualification"] == "cold"
+
+
+@pytest.mark.parametrize(("signal", "score"),
+                         [("under_budget", 3), ("stretch", 2), ("over_budget", 1)])
+def test_every_budget_signal_scores(signal, score):
+    assert state.update("s", budget_signal=signal)["bant"]["budget"] == score
+
+
+@pytest.mark.parametrize(("timeline", "score"),
+                         [("now", 3), ("this_quarter", 2), ("exploring", 1)])
+def test_every_timeline_scores(timeline, score):
+    assert state.update("s", timeline=timeline)["bant"]["timeline"] == score
+
+
+def test_a_pricing_objection_proves_a_budget_exists():
+    """They pushed back on price, so there is a budget even if it was never named."""
+    assert state.update("s", objections_raised=["pricing"])["bant"]["budget"] == 1
+
+
+def test_a_named_budget_signal_outscores_the_objection_alone():
+    s = state.update("s", objections_raised=["pricing"], budget_signal="under_budget")
+    assert s["bant"]["budget"] == 3
+
+
+def test_comparing_vendors_counts_as_an_active_evaluation():
+    assert state.update("s", competitor_mentions=["Northbeam"])["bant"]["need"] == 2
+    assert state.update("s", seat_count=200)["bant"]["need"] == 3
+
+
+def test_agreeing_a_demo_date_is_timeline_evidence():
+    assert state.update("s", next_action="book_demo")["bant"]["timeline"] == 2
+
+
+def test_a_stated_timeline_still_outscores_a_booking():
+    s = state.update("s", next_action="book_demo", timeline="now")
+    assert s["bant"]["timeline"] == 3
+
+
+def test_a_realistic_booked_call_qualifies():
+    """The exact shape of a live run that previously read as cold: seats known, price
+    objected to, competitor named, demo booked, and the model scoring nothing itself."""
+    s = state.update("s", seat_count=200, objections_raised=["pricing"],
+                     competitor_mentions=["Northbeam"], next_action="book_demo")
+    assert s["bant"] == {"budget": 1, "authority": 0, "need": 3, "timeline": 2}
+    assert s["qualification"] == "warm", s["bant"]
