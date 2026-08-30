@@ -41,7 +41,11 @@ async def _stream(sid: str, history: list[dict]):
     try:
         text = await respond(sid, history)
     except Exception as exc:  # noqa: BLE001 — the engine's failure_message covers the spoken side
-        print(f"[proxy] {sid} failed: {exc!r}")
+        # The history is logged with the error because the engine's exact message shape is
+        # the one thing we cannot see from here, and a failing turn is indistinguishable
+        # from a working one to the prospect: both just hear the fallback line.
+        shape = [(m.get("role"), len(m.get("content") or "")) for m in history]
+        print(f"[proxy] {sid} failed: {exc}\n[proxy] incoming history: {shape}")
         state.update(sid, next_action="send_followup",
                      notes=[f"call degraded: {type(exc).__name__}"])
         text = "Sorry — give me one moment."
@@ -207,5 +211,9 @@ async def complete(config: AgentConfig, messages: list[dict], specs: list[dict])
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.post(GROQ_URL, json=payload,
                               headers={"Authorization": f"Bearer {GROQ_KEY}"})
-        r.raise_for_status()
+        if r.is_error:
+            # Groq names the offending field in the body. Without it a 400 here is
+            # indistinguishable from any other failure, and every turn just becomes the
+            # fallback line — which is what "it says it has to look that up" sounds like.
+            raise RuntimeError(f"Groq {r.status_code}: {r.text[:400]}")
         return r.json()["choices"][0]["message"]

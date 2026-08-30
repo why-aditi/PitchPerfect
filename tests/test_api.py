@@ -329,3 +329,30 @@ def test_an_idle_agent_replays_nothing(config, secrets):
         return await asyncio.wait_for(stream.__anext__(), 17)
 
     assert asyncio.run(go()).startswith(": keepalive")
+
+
+def test_the_agent_and_the_prospect_get_their_own_tokens(client, monkeypatch):
+    """A token binds the uid it was minted for. Giving the engine the prospect's token made
+    it fail to join with only "RTC connection failed" — no greeting, no ASR, no turn."""
+    minted, joined = [], {}
+
+    def build_token(channel, uid, expire_s=3600):
+        minted.append(uid)
+        return f"007tok-{uid}"
+
+    async def fake_join(payload):
+        joined.update(payload["properties"])
+        return {"agent_id": "engine_1"}
+
+    monkeypatch.setattr(main.agora, "build_token", build_token)
+    monkeypatch.setattr(main.agora, "join", fake_join)
+    monkeypatch.setattr(main.db, "DATABASE_URL", "")
+
+    body = client.post("/start-call", json={"agent_id": "ag_demo"}, headers=LOCAL).json()
+
+    assert sorted(minted) == [1001, 1002], "one token each, not one shared"
+    assert joined["token"] == "007tok-1001", "the engine joins as the agent uid"
+    assert joined["agent_rtc_uid"] == "1001"
+    assert body["rtc_token"] == "007tok-1002", "the widget joins as the prospect uid"
+    assert body["uid"] == "1002"
+    assert body["rtc_token"] != joined["token"]

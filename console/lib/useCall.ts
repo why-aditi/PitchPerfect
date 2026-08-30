@@ -5,6 +5,7 @@ import type {
   IAgoraRTCClient,
   IAgoraRTCRemoteUser,
   IMicrophoneAudioTrack,
+  IRemoteAudioTrack,
 } from "agora-rtc-sdk-ng";
 import { observeChannel, startCall, stopCall } from "./api";
 import { applyLine, TranscriptDecoder, type TranscriptLine } from "./transcript";
@@ -23,8 +24,10 @@ export type CallMode =
   | { kind: "call"; agentId: string; pageContext?: string; pageOrigin?: string }
   | { kind: "observe"; agentId: string; channel: string; mic: boolean };
 
-/** Volume units are 0–100; anything under this is room noise, not speech. */
-const SPEAKING = 5;
+/** getVolumeLevel is 0–1; anything under this is room noise, not speech. */
+const SPEAKING = 0.05;
+/** Fast enough that a short reply cannot pass between two samples. */
+const METER_MS = 120;
 /** Prospect finished, agent has not started: that gap is the model thinking. */
 const THINKING_AFTER_MS = 400;
 
@@ -54,6 +57,8 @@ export function useCall(mode: CallMode): Call {
 
   const client = useRef<IAgoraRTCClient | null>(null);
   const mic = useRef<IMicrophoneAudioTrack | null>(null);
+  const agentTrack = useRef<IRemoteAudioTrack | null>(null);
+  const meter = useRef<number | null>(null);
   const decoder = useRef(new TranscriptDecoder());
   const lastProspect = useRef(0);
   // The hook re-renders on every volume tick; reading the mode from a ref keeps `start`
@@ -72,6 +77,9 @@ export function useCall(mode: CallMode): Call {
   }, [state]);
 
   const stop = useCallback(async () => {
+    if (meter.current) window.clearInterval(meter.current);
+    meter.current = null;
+    agentTrack.current = null;
     mic.current?.close();
     mic.current = null;
     const c = client.current;
@@ -110,7 +118,13 @@ export function useCall(mode: CallMode): Call {
 
       c.on("user-published", async (user: IAgoraRTCRemoteUser, media) => {
         await c.subscribe(user, media);
-        if (media === "audio") user.audioTrack?.play();
+        if (media !== "audio") return;
+        user.audioTrack?.play();
+        if (String(user.uid) === s.agent_rtc_uid) agentTrack.current = user.audioTrack ?? null;
+      });
+
+      c.on("user-unpublished", (user: IAgoraRTCRemoteUser) => {
+        if (String(user.uid) === s.agent_rtc_uid) agentTrack.current = null;
       });
 
       // PRD 6.2: the engine delivers transcripts on the data channel, to the client, and
@@ -123,26 +137,26 @@ export function useCall(mode: CallMode): Call {
       });
 
       // Visible speaking indicator for both parties — this is how a viewer sees barge-in.
-      c.enableAudioVolumeIndicator();
-      c.on("volume-indicator", (volumes) => {
-        const agent = volumes.find((v) => String(v.uid) === s.agent_rtc_uid);
-        const others = volumes.filter((v) => String(v.uid) !== s.agent_rtc_uid);
-        const agentOn = (agent?.level ?? 0) > SPEAKING;
-        const humanOn = others.some((v) => v.level > SPEAKING);
+      // Polled off the tracks rather than the client's volume-indicator event, which fires
+      // about every two seconds: a whole short reply can land between two samples, so the
+      // ring sat on "listening" while the agent was audibly talking.
+      meter.current = window.setInterval(() => {
+        const agentOn = (agentTrack.current?.getVolumeLevel() ?? 0) > SPEAKING;
+        const humanOn = (mic.current?.getVolumeLevel() ?? 0) > SPEAKING;
 
         setAgentSpeaking(agentOn);
         setProspectSpeaking(humanOn);
         if (humanOn) lastProspect.current = Date.now();
 
+        const since = Date.now() - lastProspect.current;
         setState(
           agentOn
             ? "speaking"
-            : !humanOn && Date.now() - lastProspect.current < THINKING_AFTER_MS + 1200 &&
-                Date.now() - lastProspect.current > THINKING_AFTER_MS
+            : !humanOn && since > THINKING_AFTER_MS && since < THINKING_AFTER_MS + 4000
               ? "thinking"
               : "listening",
         );
-      });
+      }, METER_MS);
 
       await c.join(s.app_id, s.channel, s.rtc_token, Number(s.uid));
 
@@ -171,6 +185,7 @@ export function useCall(mode: CallMode): Call {
   // until idle_timeout — which the PRD says never to rely on.
   useEffect(() => {
     return () => {
+      if (meter.current) window.clearInterval(meter.current);
       mic.current?.close();
       client.current?.leave().catch(() => {});
       client.current = null;

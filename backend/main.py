@@ -77,10 +77,16 @@ async def start_call(req: StartCall, origin: str | None = Header(None)):
     channel = rtm.channel_for(session_id)
     await agents.bind(session_id, req.agent_id)
 
-    token = agora.build_token(channel, int(PROSPECT_UID))
+    # A token binds the uid it was minted for, so the agent and the prospect need their
+    # own. Handing the engine the prospect's token makes it fail to join with nothing but
+    # "RTC connection failed" — no greeting, no ASR, and so no turn ever reaches the proxy.
+    agent_token = agora.build_token(channel, int(AGENT_UID))
+    prospect_token = agora.build_token(channel, int(PROSPECT_UID))
+
     llm_url = f"{PUBLIC_BASE_URL}/v1/chat/completions?session_id={session_id}"
     joined = await agora.join(
-        agora.start_payload(config, session_id, channel, token, llm_url, AGENT_UID, PROSPECT_UID))
+        agora.start_payload(config, session_id, channel, agent_token, llm_url,
+                            AGENT_UID, PROSPECT_UID))
 
     agents.set_engine_agent(session_id, joined["agent_id"])
     state.get(session_id)
@@ -88,7 +94,8 @@ async def start_call(req: StartCall, origin: str | None = Header(None)):
         await db.start_call(session_id, req.agent_id)
     SESSIONS[session_id] = {"engine_agent_id": joined["agent_id"], "agent_id": req.agent_id,
                             "channel": channel, "started": time.time()}
-    return {"app_id": agora.APP_ID, "channel": channel, "rtc_token": token, "uid": PROSPECT_UID,
+    return {"app_id": agora.APP_ID, "channel": channel, "rtc_token": prospect_token,
+            "uid": PROSPECT_UID,
             "session_id": session_id, "engine_agent_id": joined["agent_id"],
             "agent_rtc_uid": AGENT_UID}
 
