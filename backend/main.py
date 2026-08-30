@@ -99,7 +99,13 @@ async def stop_call(req: StopCall):
     if not session:
         return {"ok": False, "reason": "unknown session"}
 
-    await agora.leave(session["engine_agent_id"])  # explicit — never rely on idle_timeout
+    # Explicit leave, never idle_timeout (PRD 6.1). It must not be able to abort the rest:
+    # a hang-up that raises here leaves the call row open forever and the console shows a
+    # call that never ends, which is how sess_b947 was orphaned.
+    try:
+        await agora.leave(session["engine_agent_id"])
+    except Exception as exc:  # noqa: BLE001
+        print(f"[stop-call] leave failed for {req.session_id}: {exc!r}")
     duration = int(time.time() - session["started"])
     final = state.drop(req.session_id)
     bound = agents.for_session(req.session_id)
@@ -137,6 +143,14 @@ async def events(agent_id: str = ""):
     q = rtm.open_stream()
 
     async def pump():
+        # SSE has no replay, so a dashboard opened mid-call would sit on "waiting for a
+        # call" until the prospect happened to say something new. Send what is already
+        # known first; PRD 15.1 step 6 expects the panel to be populated, and a rep taking
+        # an escalation arrives mid-call by definition.
+        for sid in agents.sessions_for(agent_id) if agent_id else []:
+            snapshot = {"type": "lead_state", "session_id": sid,
+                        "ts": int(time.time() * 1000), "data": state.get(sid)}
+            yield "data: " + json.dumps(snapshot) + "\n\n"
         try:
             while True:
                 try:

@@ -41,6 +41,11 @@ def engine_agent(session_id: str) -> str | None:
     return _engine.get(session_id)
 
 
+def sessions_for(agent_id: str) -> list[str]:
+    """Calls currently in progress for this agent."""
+    return [sid for sid, (aid, _, _) in _bound.items() if aid == agent_id]
+
+
 def release(session_id: str) -> None:
     _bound.pop(session_id, None)
     _engine.pop(session_id, None)

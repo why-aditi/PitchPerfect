@@ -113,8 +113,11 @@ def test_outcome_reflects_what_the_call_amounted_to(lead, expected):
 # --- event stream ----------------------------------------------------------------------
 
 def read_frames(count: int, publish) -> list[dict]:
+    """Frames published after connect. The stream opens with a snapshot of any call already
+    in progress, which these tests are not about, so it is consumed first."""
     async def go():
         stream = (await main.events(agent_id="ag_test")).body_iterator.__aiter__()
+        await asyncio.wait_for(stream.__anext__(), 2)          # the mid-call snapshot
         publish()
         frames = [await asyncio.wait_for(stream.__anext__(), 2) for _ in range(count)]
         return [json.loads(f[6:]) for f in frames]
@@ -288,3 +291,41 @@ def test_missing_agora_credentials_say_so_instead_of_500(operator, monkeypatch):
     r = operator.post("/console/observe", json=OBSERVE)
     assert r.status_code == 503
     assert "not configured" in r.json()["detail"]
+
+
+def test_a_failed_hangup_still_closes_the_call(bound, monkeypatch):
+    """Agora refusing the leave must not leave the row open: the console would show a call
+    that never ends, which is how a real session was orphaned."""
+    async def refuse(engine_agent_id):
+        raise RuntimeError("Agora leave failed 500")
+
+    monkeypatch.setattr(main.agora, "leave", refuse)
+    main.SESSIONS[bound] = {"engine_agent_id": "e1", "agent_id": "ag_test",
+                            "channel": "pitchpilot-test", "started": 0}
+    assert asyncio.run(main.stop_call(main.StopCall(session_id=bound))) == {"ok": True}
+    assert bound not in main.SESSIONS
+    assert main.agents.for_session(bound) is None, "the binding is released either way"
+
+
+def test_a_dashboard_opened_mid_call_sees_the_state_already_gathered(bound):
+    """SSE has no replay, so without this a rep taking an escalation would sit on "waiting
+    for a call" until the prospect happened to say something new (PRD 15.1 step 6)."""
+    state.update(bound, company="Acme", seat_count=200)
+
+    async def go():
+        stream = (await main.events(agent_id="ag_test")).body_iterator.__aiter__()
+        return json.loads((await asyncio.wait_for(stream.__anext__(), 2))[6:])
+
+    msg = asyncio.run(go())
+    assert msg["type"] == "lead_state"
+    assert msg["session_id"] == bound
+    assert msg["data"]["company"] == "Acme" and msg["data"]["seat_count"] == 200
+
+
+def test_an_idle_agent_replays_nothing(config, secrets):
+    """No call in progress means no snapshot, not an empty one."""
+    async def go():
+        stream = (await main.events(agent_id="ag_nobody")).body_iterator.__aiter__()
+        return await asyncio.wait_for(stream.__anext__(), 17)
+
+    assert asyncio.run(go()).startswith(": keepalive")
