@@ -81,7 +81,7 @@ class AgentConfig(BaseModel):
     voice: Voice = Voice()
     knowledge: Knowledge = Knowledge()
     tools_enabled: ToolsEnabled = ToolsEnabled()
-    llm_model: str = "llama-3.3-70b-versatile"
+    llm_model: str = "openai/gpt-oss-20b"   # verified live; llama-3.3-70b-versatile was retired by Groq
 
 
 class AgentSecrets(BaseModel):

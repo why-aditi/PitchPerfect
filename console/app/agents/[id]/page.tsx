@@ -45,7 +45,7 @@ const BLANK: AgentConfig = {
   },
   knowledge: { currency: "USD", tiers: [], battlecards: {} },
   tools_enabled: { pricing: true, battlecards: true, calendar: true, crm: true, escalation: true },
-  llm_model: "llama-3.3-70b-versatile",
+  llm_model: "openai/gpt-oss-20b",
 };
 
 /** What "unsaved" is measured against: the shape the server last confirmed. */

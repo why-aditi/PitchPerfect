@@ -374,7 +374,7 @@ Fields marked **[cfg]** come from the agent record; everything else is fixed.
       "max_history": 32,
       "greeting_message": "…",             // [cfg] persona tab, carries the AI disclosure
       "failure_message": "Give me one moment.",
-      "params": { "model": "llama-3.3-70b-versatile", "stream": true }
+      "params": { "model": "openai/gpt-oss-20b", "stream": true }
     },
 
     "turn_detection": {                    // [cfg] voice tab, these values are the defaults
