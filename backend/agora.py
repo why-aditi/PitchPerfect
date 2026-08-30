@@ -95,14 +95,20 @@ def start_payload(config: AgentConfig, session_id: str, channel: str, token: str
 async def join(payload: dict) -> dict:
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.post(f"{BASE}/join", json=payload, headers=_auth())
-        r.raise_for_status()
+        if r.is_error:
+            # The engine names the offending field in the body and nowhere else, so a bare
+            # status code turns a one-line fix into an afternoon of guessing.
+            raise RuntimeError(f"Agora join failed {r.status_code}: {r.text[:500]}")
         return r.json()
 
 
 async def leave(agent_id: str) -> None:
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.post(f"{BASE}/agents/{agent_id}/leave", headers=_auth())
-        r.raise_for_status()
+        if r.status_code == 404:
+            return  # already ended or never started; hanging up twice is not an error
+        if r.is_error:
+            raise RuntimeError(f"Agora leave failed {r.status_code}: {r.text[:300]}")
 
 
 async def speak(agent_id: str, text: str, interrupt: bool = True) -> None:
@@ -110,4 +116,5 @@ async def speak(agent_id: str, text: str, interrupt: bool = True) -> None:
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.post(f"{BASE}/agents/{agent_id}/speak",
                               json={"text": text, "interrupt": interrupt}, headers=_auth())
-        r.raise_for_status()
+        if r.is_error:
+            raise RuntimeError(f"Agora speak failed {r.status_code}: {r.text[:300]}")

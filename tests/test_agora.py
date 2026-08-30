@@ -184,3 +184,9 @@ def test_bringing_your_own_key_is_still_possible(config):
 def test_the_tts_block_never_goes_out_empty(config):
     """An empty vendor is rejected by the engine, so it must not be reachable by default."""
     assert agora.start_payload(config, "s", "c", "t", "u")["properties"]["tts"]["vendor"]
+
+
+def test_tts_params_carry_the_speech_url(payload):
+    """A live join failed with "properties.tts.params.url: required field is missing".
+    The engine requires it even under managed credentials, and validates the value."""
+    assert payload["tts"]["params"]["url"] == "https://api.openai.com/v1/audio/speech"

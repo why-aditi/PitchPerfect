@@ -61,7 +61,10 @@ class Voice(BaseModel):
     # "byo" and put an api_key in tts_params to bring your own.
     tts_vendor: str = "openai"
     tts_credential_mode: str = "managed"
-    tts_params: dict = Field(default_factory=lambda: {"model": "tts-1", "voice": "coral"})
+    # url is required by the engine even under managed credentials, and it validates the
+    # value: only the vendor's real speech endpoint is accepted for the current SKU.
+    tts_params: dict = Field(default_factory=lambda: {
+        "url": "https://api.openai.com/v1/audio/speech", "model": "tts-1", "voice": "coral"})
     speech_threshold: float = 0.5
     interrupt_duration_ms: int = 160
     speaking_interrupt_duration_ms: int = 320   # raise this if "mm-hmm" cuts the agent off
