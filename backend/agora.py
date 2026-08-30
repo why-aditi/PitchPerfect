@@ -42,7 +42,12 @@ def start_payload(config: AgentConfig, session_id: str, channel: str, token: str
             "idle_timeout": 60,
             "advanced_features": {"enable_rtm": True},
             "asr": {"vendor": "ares", "language": "en-US", "params": {}},
-            "tts": {"vendor": voice.tts_vendor, "params": voice.tts_params},
+            # credential_mode sits directly under tts, not inside params. Under "managed"
+            # Agora supplies the vendor credentials and api_key is not needed, which is how
+            # an operator gets a voice without signing up to a TTS vendor (PRD 19 q1).
+            "tts": {"vendor": voice.tts_vendor,
+                    "credential_mode": voice.tts_credential_mode,
+                    "params": voice.tts_params},
             "llm": {
                 "vendor": "custom",
                 "url": llm_url,

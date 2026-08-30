@@ -369,7 +369,11 @@ Fields marked **[cfg]** come from the agent record; everything else is fixed.
 
     "asr": { "vendor": "ares", "language": "en-US", "params": { } },
 
-    "tts": { "vendor": "…", "params": { } },                    // [cfg] voice tab
+    "tts": {                                                    // [cfg] voice tab
+      "vendor": "openai",
+      "credential_mode": "managed",     // Agora supplies the key; no vendor signup
+      "params": { "model": "tts-1", "voice": "coral" }
+    },
 
     "llm": {
       "vendor": "custom",
@@ -552,7 +556,6 @@ Platform-level only. Per-agent integration credentials live in the database, not
 AGORA_APP_ID=            AGORA_APP_CERTIFICATE=     # token generation
 AGORA_CUSTOMER_ID=       AGORA_CUSTOMER_SECRET=     # Basic auth for the engine REST API
 GROQ_API_KEY=                                       # the only LLM provider
-TTS_VENDOR_KEY=                                     # only if managed mode is not used
 LLM_PROXY_SECRET=                                   # matches properties.llm.api_key
 DATABASE_URL=                                       # Postgres, free tier
 CONSOLE_PASSWORD=                                   # single operator login
@@ -600,8 +603,8 @@ pitchpilot/
 
 ## 19. Open questions
 
-1. **Managed mode or our own keys?** Try a managed preset for ASR and TTS first; it removes the vendor-signup question entirely. Decide in Phase 1, since it sits in the start payload and therefore in the Voice tab.
-2. Does the rep view need its own token endpoint, or can it reuse `/start-call` with a rep role flag?
+1. ~~Managed mode or our own keys?~~ **Answered: managed.** `tts.credential_mode = "managed"` makes Agora supply the vendor credentials, so a new agent has a working voice with no signup anywhere — which is what G7 promises. Note `credential_mode` sits directly under `tts`, not inside `params`. Bring-your-own remains available per agent by setting it to `byo` and putting an `api_key` in `tts_params`, so no voice vendor key belongs in the environment.
+2. ~~Does the rep view need its own token endpoint?~~ **Answered: yes, `POST /console/observe`.** It mints an RTC token for a channel already running, operator-gated, with a fresh uid each time — two people watching one call must not collide on a uid, which would drop the first out of the channel.
 3. Should `escalate_to_human` use the engine's speak endpoint for the hand-off line, so it is guaranteed to play even if the LLM is mid-thought?
 4. Does the Knowledge tab need CSV import for pricing tiers, or is a hand-edited table enough for the demo?
 5. Should a brand-new agent be created from a template with the seeded defaults already filled in, or from an empty form? A template makes §15.2 much faster to run.

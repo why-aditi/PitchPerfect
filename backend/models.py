@@ -56,8 +56,12 @@ class Persona(BaseModel):
 
 class Voice(BaseModel):
     """Maps onto the Agora payload. Defaults are the PRD 12 reference values."""
-    tts_vendor: str = ""
-    tts_params: dict = {}
+    # Defaults to managed credentials so a brand-new agent produces a valid join payload
+    # with no voice-vendor signup, which is what G7 promises. Set tts_credential_mode to
+    # "byo" and put an api_key in tts_params to bring your own.
+    tts_vendor: str = "openai"
+    tts_credential_mode: str = "managed"
+    tts_params: dict = Field(default_factory=lambda: {"model": "tts-1", "voice": "coral"})
     speech_threshold: float = 0.5
     interrupt_duration_ms: int = 160
     speaking_interrupt_duration_ms: int = 320   # raise this if "mm-hmm" cuts the agent off

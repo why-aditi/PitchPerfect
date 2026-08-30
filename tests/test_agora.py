@@ -155,3 +155,32 @@ def test_expiry_is_a_duration_not_a_timestamp():
         token2.build(APP, CERT, "ch", 1, expire_s=3600, issue_ts=1735689600, salt=1)[3:]))
     assert (3600).to_bytes(4, "little") in raw
     assert (1735689600 + 3600).to_bytes(4, "little") not in raw
+
+
+# --- tts ------------------------------------------------------------------------------
+
+def test_a_new_agent_gets_a_voice_without_a_vendor_signup(payload):
+    """G7: the operator configures an agent without opening the Agora dashboard or
+    signing up to a TTS vendor. Managed credentials are what make that true."""
+    assert payload["tts"]["vendor"] == "openai"
+    assert payload["tts"]["credential_mode"] == "managed"
+    assert payload["tts"]["params"]["voice"]
+
+
+def test_credential_mode_sits_directly_under_tts(payload):
+    """Agora reads it there, not inside params, and the wrong placement fails the join
+    with nothing useful in the message."""
+    assert "credential_mode" not in payload["tts"]["params"]
+
+
+def test_bringing_your_own_key_is_still_possible(config):
+    config.voice.tts_credential_mode = "byo"
+    config.voice.tts_params = {"api_key": "sk-test", "voice": "alloy"}
+    tts = agora.start_payload(config, "s", "c", "t", "u")["properties"]["tts"]
+    assert tts["credential_mode"] == "byo"
+    assert tts["params"]["api_key"] == "sk-test"
+
+
+def test_the_tts_block_never_goes_out_empty(config):
+    """An empty vendor is rejected by the engine, so it must not be reachable by default."""
+    assert agora.start_payload(config, "s", "c", "t", "u")["properties"]["tts"]["vendor"]
