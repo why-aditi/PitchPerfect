@@ -26,34 +26,37 @@ GATED_BY = {
 }
 
 SPECS = [
+    # Descriptions are terse on purpose: the whole block is resent on every request and is
+    # the largest part of the payload. Each keeps the one phrase that decides when the tool
+    # applies, and update_lead_state keeps its enums, which constrain the values we store.
     {"name": "get_pricing",
-     "description": "Tier, per-seat price, volume break and features. The only source of prices.",
+     "description": "Tier, per-seat price, volume break, features. The only source of prices.",
      "parameters": {"type": "object", "properties": {
          "tier": {"type": "string"}, "seats": {"type": "integer"}}}},
     {"name": "get_battlecard",
-     "description": "Competitor positioning. Returns no_data for unknown competitors — say so, never guess.",
+     "description": "Competitor positioning. Returns no_data for unknown ones — say so, never guess.",
      "parameters": {"type": "object", "properties": {"competitor": {"type": "string"}},
                     "required": ["competitor"]}},
     {"name": "update_lead_state",
-     "description": "Record anything learned about the prospect. Merges into the lead state.",
+     "description": "Record anything learned about the prospect. Merges.",
      "parameters": {"type": "object", "properties": {
          "company": {"type": "string"}, "email": {"type": "string"},
          "industry": {"type": "string"}, "use_case": {"type": "string"},
          "seat_count": {"type": "integer"},
-         "budget_signal": {"type": "string", "enum": ["under_budget", "stretch", "over_budget"]},
-         "timeline": {"type": "string", "enum": ["now", "this_quarter", "exploring"]},
+         "budget_signal": {"enum": ["under_budget", "stretch", "over_budget"]},
+         "timeline": {"enum": ["now", "this_quarter", "exploring"]},
          "objections_raised": {"type": "array", "items": {"type": "string"}},
          "competitor_mentions": {"type": "array", "items": {"type": "string"}},
-         "bant": {"type": "object", "description": "0-3 per key: budget, authority, need, timeline"},
-         "next_action": {"type": "string", "enum": ["book_demo", "send_followup", "escalate"]},
+         "bant": {"type": "object", "description": "0-3 each: budget, authority, need, timeline"},
+         "next_action": {"enum": ["book_demo", "send_followup", "escalate"]},
          "notes": {"type": "array", "items": {"type": "string"}}}}},
-    {"name": "check_slots", "description": "Real calendar availability, up to 5 slots.",
+    {"name": "check_slots", "description": "Real availability, up to 5 slots.",
      "parameters": {"type": "object", "properties": {"days_ahead": {"type": "integer"}}}},
-    {"name": "book_meeting", "description": "Book the demo. Requires an email address.",
+    {"name": "book_meeting", "description": "Book the demo. Needs an email.",
      "parameters": {"type": "object", "properties": {
          "slot_iso": {"type": "string"}, "email": {"type": "string"}, "name": {"type": "string"}},
          "required": ["slot_iso", "email"]}},
-    {"name": "escalate_to_human", "description": "Hand off to a human rep on this same call.",
+    {"name": "escalate_to_human", "description": "Hand off to a human rep on this call.",
      "parameters": {"type": "object", "properties": {"reason": {"type": "string"}},
                     "required": ["reason"]}},
 ]

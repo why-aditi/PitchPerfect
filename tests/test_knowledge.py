@@ -49,9 +49,24 @@ def test_unknown_tier_returns_no_data_and_lists_the_real_ones(config):
     assert result["known_tiers"] == ["Starter", "Growth", "Enterprise"]
 
 
-def test_named_tier_wins_over_seat_count(config):
-    """The prospect asked about a specific tier; answer that, do not silently re-tier them."""
-    assert get_pricing(config, tier="Starter", seats=500)["tier"] == "Starter"
+def test_a_named_tier_is_honoured_when_it_covers_the_seats(config):
+    assert get_pricing(config, tier="Growth", seats=50)["tier"] == "Growth"
+    assert "note" not in get_pricing(config, tier="Growth", seats=50)
+
+
+def test_a_named_tier_that_cannot_serve_the_seats_is_corrected(config):
+    """A live run had the model ask for Growth at 200 seats and quote $34/seat — a real
+    price the prospect could never buy, since Growth stops at 99. The seat count wins and
+    the swap is reported, so the agent can say why rather than silently re-tiering."""
+    result = get_pricing(config, tier="Growth", seats=200)
+    assert result["tier"] == "Enterprise"
+    assert result["per_seat_month"] == 32
+    assert "does not cover 200 seats" in result["note"]
+
+
+def test_a_named_tier_alone_is_never_corrected(config):
+    """With no seat count there is nothing to contradict, so answer what was asked."""
+    assert get_pricing(config, tier="Starter")["tier"] == "Starter"
 
 
 def test_an_agent_with_no_pricing_says_so(config):
