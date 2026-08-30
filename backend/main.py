@@ -126,10 +126,6 @@ def _outcome(lead: dict) -> str | None:
 
 
 async def _allowed_origins(agent_id: str) -> list[str]:
-    if not db.DATABASE_URL:
-        # ponytail: no database yet means the local dev origins, so the demo site works
-        # before Postgres is provisioned. Remove once DATABASE_URL is always set.
-        return ["http://localhost:3000", "http://localhost:3001"]
     agent = await db.get_agent(agent_id)
     return agent["allowed_origins"] if agent else []
 

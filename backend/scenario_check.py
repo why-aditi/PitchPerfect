@@ -9,7 +9,8 @@ import asyncio
 import json
 
 from . import agents, proxy, rtm, state, tools
-from .seed import DEMO_ID
+from .models import AgentSecrets
+from .seed import DEMO_ID, demo_config
 
 SID = "sess_test"
 events: list[dict] = []
@@ -59,11 +60,11 @@ async def main():
     rtm.subscribe(events.append)
     proxy.complete = fake_complete
 
-    # The whole point of Phase 2: config comes from the agent record, not from module
-    # constants. With no DATABASE_URL this resolves through the seed.
-    bound = await agents.bind(SID, DEMO_ID)
-    assert bound is not None, f"could not load {DEMO_ID}"
-    config, _ = bound
+    # The whole point of Phase 2: config comes from an agent record, not from module
+    # constants. The record is built here rather than fetched, so this stays a text-mode
+    # gate that needs no database — tests/test_db.py covers the Postgres path itself.
+    config = demo_config()
+    agents._bound[SID] = (DEMO_ID, config, AgentSecrets())
     assert config.knowledge.tiers, "the agent carries its own pricing"
 
     history = []
@@ -116,17 +117,9 @@ async def main():
     assert proxy.run_tool(SID, "check_slots", {})["error"] == "tool_disabled"
     config.tools_enabled.calendar = True
 
-    # The origin allowlist, at the endpoint. Both refusals happen before any Agora call.
-    from fastapi.testclient import TestClient
-
-    from .main import app
-
-    c = TestClient(app)
-    body = {"agent_id": DEMO_ID, "page_context": "pricing"}
-    assert c.post("/start-call", json=body, headers={"Origin": "https://evil.test"}).status_code == 403
-    assert c.post("/start-call", json=body).status_code == 403, "a missing Origin is not a pass"
-    assert c.post("/start-call", json={"agent_id": "ag_nope"},
-                  headers={"Origin": "http://localhost:3000"}).status_code == 404
+    # The origin allowlist lives in tests/test_api.py, which stubs the agent lookup. It
+    # needs a database here now that /start-call no longer falls back to the seed, and
+    # this gate is about the conversation, not the HTTP surface.
 
     print(f"scenario_check ok — {len(events)} events, lead is {lead['qualification']}")
 

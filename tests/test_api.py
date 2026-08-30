@@ -10,6 +10,24 @@ from backend import agents, console, main, proxy, rtm, state
 LOCAL = {"Origin": "http://localhost:3000"}
 
 
+@pytest.fixture(autouse=True)
+def stub_agent_lookup(monkeypatch, config, secrets):
+    """The HTTP surface is tested without a database. Production no longer falls back to
+    the seed when DATABASE_URL is unset — a misconfigured deployment must fail rather than
+    quietly serve the demo agent — so the lookup is stubbed here instead."""
+    from backend import agents
+    from backend.seed import demo_config
+
+    async def load(agent_id):
+        return (demo_config(), secrets) if agent_id == "ag_demo" else None
+
+    async def allowed(agent_id):
+        return ["http://localhost:3000", "http://localhost:3001"] if agent_id == "ag_demo" else []
+
+    monkeypatch.setattr(agents, "load", load)
+    monkeypatch.setattr(main, "_allowed_origins", allowed)
+
+
 @pytest.fixture
 def client():
     return TestClient(main.app)

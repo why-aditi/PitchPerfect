@@ -13,12 +13,6 @@ _bound: dict[str, tuple[str, AgentConfig, AgentSecrets]] = {}
 
 async def load(agent_id: str) -> tuple[AgentConfig, AgentSecrets] | None:
     """Read an agent from the database. Returns None if it does not exist."""
-    if not db.DATABASE_URL:
-        # ponytail: no database configured means serve the seed, so text-mode work and
-        # the demo site run before Postgres is provisioned. Remove once DATABASE_URL is set.
-        from .seed import DEMO_ID, demo_config
-        return (demo_config(), AgentSecrets()) if agent_id == DEMO_ID else None
-
     agent = await db.get_agent(agent_id)
     if agent is None:
         return None
