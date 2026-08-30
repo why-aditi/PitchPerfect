@@ -9,6 +9,7 @@ from . import db
 from .models import AgentConfig, AgentSecrets
 
 _bound: dict[str, tuple[str, AgentConfig, AgentSecrets]] = {}
+_engine: dict[str, str] = {}   # session_id -> the engine's own agent id, for speak/leave
 
 
 async def load(agent_id: str) -> tuple[AgentConfig, AgentSecrets] | None:
@@ -32,8 +33,17 @@ def for_session(session_id: str) -> tuple[str, AgentConfig, AgentSecrets] | None
     return _bound.get(session_id)
 
 
+def set_engine_agent(session_id: str, engine_agent_id: str) -> None:
+    _engine[session_id] = engine_agent_id
+
+
+def engine_agent(session_id: str) -> str | None:
+    return _engine.get(session_id)
+
+
 def release(session_id: str) -> None:
     _bound.pop(session_id, None)
+    _engine.pop(session_id, None)
 
 
 def allowed_origin(origins: list[str], origin: str | None) -> bool:

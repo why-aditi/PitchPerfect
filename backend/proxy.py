@@ -4,6 +4,7 @@ The tool loop runs here and the engine only ever sees final assistant text (PRD 
 Conversation history belongs to the engine (it resends it, bounded by max_history);
 what belongs to us is the lead state and the agent's config.
 """
+import asyncio
 import json
 import os
 import time
@@ -149,6 +150,7 @@ def _dispatch(sid: str, name: str, args: dict) -> dict:
         rtm.publish(sid, "escalation", {"reason": reason, "summary": result["summary"],
                                         "channel": result["channel"]})
         rtm.publish(sid, "outcome", {"kind": "escalated", "detail": {"reason": reason}})
+        _say_aloud(sid, result["rep_eta"])
         return result
 
     return {"error": "unknown_tool", "name": name}
@@ -157,6 +159,32 @@ def _dispatch(sid: str, name: str, args: dict) -> dict:
 def _money(value: float) -> str:
     """39.0 reads as 39; 19.5 stays 19.5. Config stores prices as numbers, not strings."""
     return str(int(value)) if float(value).is_integer() else str(value)
+
+
+def _say_aloud(sid: str, text: str) -> None:
+    """Speak a line through the engine rather than through the reply (PRD 19 q3).
+
+    The hand-off line has to be heard. Returning it as text puts it at the mercy of the
+    turn: the model may reword it, bury it, or be mid-sentence when the rep arrives.
+    Fire-and-forget, because a hand-off that also blocks the reply is worse than one that
+    is not announced, and never fatal — the escalation itself has already been published.
+    """
+    from . import agents, agora
+
+    engine_agent_id = agents.engine_agent(sid)
+    if not engine_agent_id:
+        return  # text-mode session, or a call that never reached the engine
+
+    async def speak():
+        try:
+            await agora.speak(engine_agent_id, text, interrupt=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[proxy] hand-off line not spoken: {exc!r}")
+
+    try:
+        asyncio.get_running_loop().create_task(speak())
+    except RuntimeError:
+        pass  # no loop (a sync test); the escalation event still went out
 
 
 def _summarise(name: str, result: dict) -> str:

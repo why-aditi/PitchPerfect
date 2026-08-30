@@ -215,3 +215,32 @@ def test_rebooking_does_not_announce_a_second_outcome(bound, events):
     proxy.run_tool(bound, "book_meeting", args)
     proxy.run_tool(bound, "book_meeting", args)
     assert [e["data"]["kind"] for e in events if e["type"] == "outcome"] == ["meeting_booked"]
+
+
+def test_escalation_speaks_the_handoff_line_through_the_engine(bound, monkeypatch):
+    """PRD 19 q3: returning it as text leaves it to the model to reword or bury, and the
+    rep may arrive mid-sentence. The engine speaks it directly instead."""
+    from backend import agents, agora
+
+    spoken = []
+
+    async def fake_speak(engine_agent_id, text, interrupt=True):
+        spoken.append((engine_agent_id, text, interrupt))
+
+    monkeypatch.setattr(agora, "speak", fake_speak)
+    agents.set_engine_agent(bound, "engine_1")
+
+    async def go():
+        proxy.run_tool(bound, "escalate_to_human", {"reason": "asked for a human"})
+        await asyncio.sleep(0)          # let the fire-and-forget task run
+
+    asyncio.run(go())
+    assert spoken and spoken[0][0] == "engine_1"
+    assert "rep" in spoken[0][1].lower()
+    assert spoken[0][2] is True, "it must cut through whatever the agent is saying"
+
+
+def test_escalation_survives_a_session_with_no_engine_agent(bound, events):
+    """Text-mode sessions never joined a channel; the escalation must still be published."""
+    proxy.run_tool(bound, "escalate_to_human", {"reason": "legal question"})
+    assert [e["type"] for e in events if e["type"] == "escalation"] == ["escalation"]

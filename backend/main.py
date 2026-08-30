@@ -82,6 +82,7 @@ async def start_call(req: StartCall, origin: str | None = Header(None)):
     joined = await agora.join(
         agora.start_payload(config, session_id, channel, token, llm_url, AGENT_UID, PROSPECT_UID))
 
+    agents.set_engine_agent(session_id, joined["agent_id"])
     state.get(session_id)
     if db.DATABASE_URL:
         await db.start_call(session_id, req.agent_id)
