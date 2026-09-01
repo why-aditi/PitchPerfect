@@ -159,6 +159,17 @@ def _dispatch(sid: str, name: str, args: dict, history: list[dict]) -> dict:
             rtm.publish(sid, "outcome", {"kind": "meeting_booked", "detail": result})
         return result
 
+    if name == "cancel_meeting":
+        result = tools.cancel_meeting(secrets, session_id=sid, **args)
+        if result.get("cancelled"):
+            # The demo is off, so the call's next step is a follow-up rather than a booking.
+            # No outcome is published: the meeting_booked chip already went out and the
+            # console shows the cancel as its own tool call.
+            lead = state.update(sid, next_action="send_followup",
+                                notes=[f"cancelled the demo: {args.get('reason') or 'no reason given'}"])
+            rtm.publish(sid, "lead_state", lead)
+        return result
+
     if name == "escalate_to_human":
         reason = args.get("reason", "")
         lead = state.update(sid, next_action="escalate")

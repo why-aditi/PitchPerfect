@@ -26,7 +26,7 @@ const TOOLS: {
   {
     key: "calendar",
     label: "Cal.com scheduling",
-    hint: "Off: no availability and no booking, so the top goal in the hierarchy is unreachable on the call itself.",
+    hint: "Off: no availability, no booking and no cancelling, so the top goal in the hierarchy is unreachable on the call itself. Booking, moving and cancelling only ever touch the meeting made on that same call — the agent is never given a booking id.",
   },
   {
     key: "crm",

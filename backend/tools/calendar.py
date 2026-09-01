@@ -223,6 +223,40 @@ def book_meeting(secrets: AgentSecrets, slot_iso: str, email: str, name: str | N
     return booking
 
 
+def cancel_meeting(secrets: AgentSecrets, reason: str = "", session_id: str = "") -> dict:
+    """Cancel the meeting THIS call booked. There is no way to name any other one.
+
+    The booking uid is never a parameter — it is read from _booked[session_id], which only
+    ever holds what this session created. That is the whole access-control story, and it is
+    deliberately structural rather than a check the model could be talked past: a uid
+    argument would let a caller cancel a stranger's meeting by guessing or overhearing one,
+    and an email argument would let them cancel anything that address had ever booked.
+
+    The cost is that a prospect ringing back to cancel yesterday's demo cannot be served
+    here. That is the right trade: identity on this call is an unauthenticated voice, so
+    the honest answer is a human, not a lookup.
+    """
+    booking = _booked.get(session_id)
+    if not booking:
+        return {"error": "nothing_booked",
+                "instruction": "No meeting was booked on this call, so there is nothing to "
+                               "cancel. If they mean an earlier booking, say a colleague "
+                               "will sort it out and call escalate_to_human."}
+
+    if booking["source"] == "cal.com":
+        r = httpx.post(f"{API}/bookings/{booking['booking_id']}/cancel",
+                       headers=_headers(secrets, BOOKINGS_VERSION), timeout=10,
+                       json={"cancellationReason": reason or "cancelled on the call"})
+        try:
+            r.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            return _api_error(exc)      # the booking stands; do not forget it
+
+    _booked.pop(session_id, None)       # so a later book_meeting starts clean
+    return {"cancelled": True, "slot_iso": booking["slot_iso"], "human": booking.get("human"),
+            "booking_id": booking["booking_id"], "reason": reason}
+
+
 def _reschedule(secrets: AgentSecrets, existing: dict, slot_iso: str, tz: ZoneInfo,
                 session_id: str) -> dict:
     """v2 links the old and new bookings itself, so this is one call and a new uid back.
