@@ -6,6 +6,7 @@ escalation threshold. CONSTRAINTS and CONVERSATION are fixed: they are the guara
 product makes, so the console must not be able to edit them away.
 """
 import json
+from datetime import datetime, timezone
 
 from .models import AgentConfig
 
@@ -14,11 +15,27 @@ CONSTRAINTS = """Rules:
 - No data from a tool means say so and offer to follow up. Never estimate.
 - Never discount unprompted."""
 
-CONVERSATION = """Speaking:
-- Two or three sentences. This is audio.
-- One question at a time.
+# Every line here earns its tokens by removing a specific tell. Models default to written
+# prose, and written prose read aloud is what makes an agent sound like an agent: the
+# preamble before the answer, the three-item list, the read-back confirmation, the raw
+# timestamp. Naming each one is cheaper than hoping "be conversational" covers it.
+CONVERSATION = """Speaking — a phone call, not chat:
+- One or two sentences, then stop. Three is a monologue.
+- Contractions. I'll, you're, that's, we've.
+- Answer first. No "Great question", no "Absolutely", no "I'd be happy to".
+- React in one word if it helps — "Right." "Got it." — then move on.
+- Never list. Say the one that matters and let them ask for the rest.
+- Never read their words back to confirm you heard them.
+- Say times like a person: "Thursday at ten", never a date or a raw timestamp.
+- Prices: read the tool's "spoken" field as written. Never spell a number into words
+  and never do the arithmetic yourself — a live call turned $780 into "seventy-eight".
+- One question at a time, and only when you need the answer.
+- Before booking, get their name and their email. Ask for the name first, then the
+  email, and read the email back before you book it.
 - If interrupted, drop that point entirely. Never resume it.
-- Call update_lead_state as soon as you learn something, before replying.
+- Silence is fine. Do not fill it by restating.
+- Call update_lead_state the moment anything lands — company, seats, industry, use
+  case, budget, timeline, an objection, a competitor — before you reply, every time.
 - Find out their budget and their timeline. Qualification depends on both."""
 
 
@@ -63,13 +80,28 @@ def compact_state(state: dict) -> str:
 
 def build(config: AgentConfig, state: dict, history: list[dict],
           keep_turns: int = 8) -> list[dict]:
-    """System prompt + live lead state + the last N turns (older ones collapsed)."""
-    system = f"{system_prompt(config)}\n\nLead state so far: {compact_state(state)}"
+    """Stable prompt, then the volatile block, then the last N turns.
+
+    The split is the whole point, and it is about cost rather than wording. Groq caches
+    on a matching prefix and cached tokens do not count against tokens-per-minute, so
+    everything constant has to sit in front of everything that moves. Folding the clock
+    and the lead state into the persona message put a per-minute timestamp at the very
+    front and invalidated the prefix on every request — including the tool specs, which
+    are the larger half of the ~1200 tokens this pays for.
+
+    The clock itself is not optional: without it the model cannot resolve "tomorrow"
+    against the ISO slots check_slots returns, and reads the timestamp aloud instead.
+    """
+    now = datetime.now(timezone.utc).strftime("%A %d %B %Y, %H:%M UTC")
     recent = history[-keep_turns * 2:]
     older = history[:-keep_turns * 2]
-    messages = [{"role": "system", "content": system}]
+
+    # Byte-identical on every request for a given agent. Nothing may be added here.
+    messages = [{"role": "system", "content": system_prompt(config)}]
+    volatile = f"Right now it is {now}." + "\n" + f"Lead state so far: {compact_state(state)}"
     if older:
-        messages.append({"role": "system", "content": f"Earlier in this call: {_collapse(older)}"})
+        volatile += "\n" + f"Earlier in this call: {_collapse(older)}"
+    messages.append({"role": "system", "content": volatile})
     return messages + recent
 
 

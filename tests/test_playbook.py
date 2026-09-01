@@ -5,7 +5,7 @@ The grounding constraints are fixed, and the console must not be able to remove 
 """
 import json
 
-from backend import playbook
+from backend import playbook, state as leadstate
 
 
 def test_operator_identity_reaches_the_prompt(config):
@@ -61,9 +61,9 @@ def test_constraints_come_after_the_operator_text(config):
 
 def test_lead_state_is_injected(config):
     state = {"session_id": "s", "seat_count": 200, "qualification": "hot"}
-    system = playbook.build(config, state, [])[0]["content"]
-    assert playbook.compact_state(state) in system
-    assert '"seat_count":200' in system
+    volatile = playbook.build(config, state, [])[1]["content"]
+    assert playbook.compact_state(state) in volatile
+    assert '"seat_count":200' in volatile
 
 
 def test_lead_state_omits_what_has_not_been_learned(config):
@@ -81,7 +81,7 @@ def test_lead_state_omits_what_has_not_been_learned(config):
 
 def test_short_history_passes_through_untouched(config):
     history = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
-    assert playbook.build(config, {}, history)[1:] == history
+    assert playbook.build(config, {}, history)[2:] == history
 
 
 def test_long_history_is_trimmed_to_the_recent_turns(config):
@@ -93,15 +93,16 @@ def test_long_history_is_trimmed_to_the_recent_turns(config):
 
 def test_trimmed_turns_are_summarised_rather_than_dropped(config):
     history = [{"role": "user", "content": f"turn {i}"} for i in range(30)]
-    summary = playbook.build(config, {}, history, keep_turns=4)[1]["content"]
-    assert summary.startswith("Earlier in this call:")
-    assert "turn 0" in summary
+    volatile = playbook.build(config, {}, history, keep_turns=4)[1]["content"]
+    assert "Earlier in this call:" in volatile
+    assert "turn 0" in volatile
 
 
 def test_the_summary_is_bounded(config):
     """Groq's free tier caps tokens per minute, so the collapse must not grow with the call."""
     history = [{"role": "user", "content": "x" * 200} for _ in range(200)]
-    summary = playbook.build(config, {}, history, keep_turns=2)[1]["content"]
+    volatile = playbook.build(config, {}, history, keep_turns=2)[1]["content"]
+    summary = volatile.split("Earlier in this call:")[1]
     assert len(summary) < 600
 
 
@@ -110,5 +111,26 @@ def test_a_history_of_only_assistant_turns_still_collapses(config):
     assert playbook.build(config, {}, history, keep_turns=2)[1]["content"].endswith("small talk")
 
 
-def test_empty_history_yields_just_the_system_prompt(config):
-    assert len(playbook.build(config, {}, [])) == 1
+def test_empty_history_yields_just_the_two_system_messages(config):
+    """The stable prefix and the volatile block are always both present, in that order."""
+    messages = playbook.build(config, {}, [])
+    assert [m["role"] for m in messages] == ["system", "system"]
+
+
+def test_the_cacheable_prefix_never_moves(config):
+    """Groq caches on a matching prefix and cached tokens are free of the TPM limit, so the
+    first message must be byte-identical however the call is going. A regression here costs
+    nothing visible and quietly reinstates the rate limit that kills live calls."""
+    cold = playbook.build(config, leadstate.new_state("s"), [])
+    warm = playbook.build(
+        config,
+        leadstate.update("s", company="Acme", seat_count=200, email="a@b.test",
+                     objections_raised=["pricing"], next_action="book_demo"),
+        [{"role": "user", "content": f"turn {i}"} for i in range(40)],
+    )
+    assert cold[0]["content"] == warm[0]["content"], "the stable prefix drifted"
+    assert "Acme" not in cold[0]["content"] and "Acme" not in warm[0]["content"]
+    assert "Right now" not in warm[0]["content"], "the clock belongs after the prefix"
+
+    # ...and everything that moves has to actually be present, just later.
+    assert "Acme" in warm[1]["content"] and "Right now it is" in warm[1]["content"]

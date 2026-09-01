@@ -1,6 +1,30 @@
 """Prices come from the agent's own knowledge, never from the model's memory."""
 from ..models import AgentConfig, Tier
 
+_SYMBOL = {"USD": "$", "EUR": "€", "GBP": "£", "INR": "₹"}
+
+
+def _money(value: float, currency: str) -> str:
+    """39.0 reads as $39; 19.5 stays $19.5. Config stores prices as numbers, not strings."""
+    amount = int(value) if float(value).is_integer() else value
+    symbol = _SYMBOL.get(currency)
+    return f"{symbol}{amount:,}" if symbol else f"{amount:,} {currency}"
+
+
+def _spoken(per_seat: float, seats: int | None, currency: str) -> str:
+    """The quote already phrased for speech.
+
+    Asked to say prices "like a person", a live call rendered a $780 total as
+    "seventy-eight a month" — the model is reliable at the arithmetic and unreliable at
+    turning the result into words, and a wrong price said confidently is the worst thing
+    this agent can do. So it is never asked to do either: the figure arrives ready to read,
+    and TTS says "$780" correctly on its own.
+    """
+    rate = f"{_money(per_seat, currency)} a seat"
+    if not seats:
+        return rate
+    return f"{rate}, {_money(per_seat * seats, currency)} a month for {seats} seats"
+
 
 def _serves(tier: Tier, seats: int) -> bool:
     return seats >= tier.min_seats and (tier.max_seats is None or seats <= tier.max_seats)
@@ -52,4 +76,6 @@ def get_pricing(config: AgentConfig, tier: str | None = None, seats: int | None 
     if seats:
         out["seats"] = seats
         out["monthly_total"] = per_seat * seats
+    # Read this out as written. Anything the model reformats, it can get wrong.
+    out["spoken"] = _spoken(per_seat, seats, config.knowledge.currency)
     return out

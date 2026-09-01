@@ -7,6 +7,7 @@ what belongs to us is the lead state and the agent's config.
 import asyncio
 import json
 import os
+import re
 import time
 
 import httpx
@@ -18,8 +19,13 @@ from .models import AgentConfig, AgentSecrets
 
 router = APIRouter()
 
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_KEY = os.getenv("GROQ_API_KEY", "")
+# Any OpenAI-compatible chat-completions endpoint. Groq stays the default because that is
+# what the agent records name in llm_model, but the provider is the one thing most likely to
+# change under this proxy — Groq's free tier is 8000 tokens/minute and a tool-using turn
+# costs about 3600, which is roughly four turns of a real call. Swapping providers should
+# be two lines of .env, not an edit here.
+LLM_URL = os.getenv("LLM_URL") or "https://api.groq.com/openai/v1/chat/completions"
+LLM_KEY = os.getenv("LLM_API_KEY") or os.getenv("GROQ_API_KEY", "")
 PROXY_SECRET = os.getenv("LLM_PROXY_SECRET", "")
 MAX_TOOL_HOPS = 4
 
@@ -96,14 +102,14 @@ async def respond(sid: str, history: list[dict]) -> str:
             except json.JSONDecodeError:
                 args = {}
             messages.append({"role": "tool", "tool_call_id": call["id"], "name": name,
-                             "content": json.dumps(run_tool(sid, name, args))})
+                             "content": json.dumps(run_tool(sid, name, args, history))})
     return "Let me bring in a colleague who can help with that."
 
 
-def run_tool(sid: str, name: str, args: dict) -> dict:
+def run_tool(sid: str, name: str, args: dict, history: list[dict] | None = None) -> dict:
     """Execute one tool and publish what the console needs to see."""
     try:
-        result = _dispatch(sid, name, args)
+        result = _dispatch(sid, name, args, history or [])
     except Exception as exc:  # noqa: BLE001 — a bad tool call is the model's problem to recover from
         print(f"[proxy] tool {name} failed: {exc!r}")
         result = {"error": type(exc).__name__, "detail": str(exc)}
@@ -112,7 +118,7 @@ def run_tool(sid: str, name: str, args: dict) -> dict:
     return result
 
 
-def _dispatch(sid: str, name: str, args: dict) -> dict:
+def _dispatch(sid: str, name: str, args: dict, history: list[dict]) -> dict:
     config, secrets = _bound(sid)
 
     # A disabled tool is absent from the specs, so the model should never ask for one.
@@ -121,6 +127,10 @@ def _dispatch(sid: str, name: str, args: dict) -> dict:
         return {"error": "tool_disabled", "name": name}
 
     if name == "update_lead_state":
+        # Same trust boundary as booking: ASR turns a dictated address into words, and a
+        # live call stored "gmail.com" as the email and carried it towards the CRM.
+        if "email" in args:
+            args = {**args, "email": tools.clean_email(args["email"] or "")}
         lead = state.update(sid, **args)
         rtm.publish(sid, "lead_state", lead)
         tools.sync_contact(secrets, lead)  # debounced, fire-and-forget
@@ -137,10 +147,13 @@ def _dispatch(sid: str, name: str, args: dict) -> dict:
 
     if name == "book_meeting":
         result = tools.book_meeting(secrets, session_id=sid, **args)
-        # already_booked is the idempotent path: the booking stands, but re-announcing it
-        # would put a second meeting_booked on the console for one demo.
-        if "error" not in result and not result.get("already_booked"):
-            lead = state.update(sid, next_action="book_demo", email=args.get("email"))
+        # One demo is one outcome and one deal, however many times it is agreed or moved.
+        # already_booked is the idempotent repeat; rescheduled_from is the prospect moving
+        # it mid-call. Both leave the existing booking standing, so re-announcing either
+        # would put a second meeting on the console and a duplicate deal in the CRM.
+        settled = result.get("already_booked") or "rescheduled_from" in result
+        if "error" not in result and not settled:
+            lead = state.update(sid, next_action="book_demo", email=result.get("email"))
             rtm.publish(sid, "lead_state", lead)
             tools.create_deal(secrets, lead, result)
             rtm.publish(sid, "outcome", {"kind": "meeting_booked", "detail": result})
@@ -201,19 +214,73 @@ def _summarise(name: str, result: dict) -> str:
     return str(result)[:120]
 
 
-async def complete(config: AgentConfig, messages: list[dict], specs: list[dict]) -> dict:
+# A live call cannot wait long, but Groq's free tier names a wait that is usually shorter
+# than the filler phrase already playing. Anything past this and the prospect is sitting in
+# silence, so the turn is better spent on the fallback line.
+# Measured against the real thing: a live turn was refused a retry because Groq asked for
+# 4.0875s and the cap was 4.0. Free-tier waits land just under five, and five seconds of a
+# filler phrase beats a dead turn and a prospect saying "hello?".
+MAX_WAIT_S = 5.0
+
+
+def _retry_after(status_code: int, headers, body: str) -> float | None:
+    """Seconds to wait before trying a rate-limited request again, or None to give up.
+
+    A 429 on free-tier TPM is the commonest way a real call dies: the system prompt, the
+    tool specs and the history are resent every request, so a few tool-using turns clear
+    8000 tokens/minute. Groq names the wait, and it is typically 2-4 seconds — long, but a
+    slow answer beats a dead turn, and the filler phrase is already covering the gap.
+    """
+    if status_code != 429:
+        return None
+    wait = headers.get("retry-after")
+    if wait is None:
+        match = re.search(r"try again in ([0-9.]+)s", body)
+        wait = match.group(1) if match else None
+    try:
+        seconds = float(wait)
+    except (TypeError, ValueError):
+        return None
+    return seconds if 0 < seconds <= MAX_WAIT_S else None
+
+
+def _should_resample(status_code: int, body: str) -> bool:
+    """Whether a Groq failure is a bad sample rather than a bad request.
+
+    gpt-oss leaks its own channel token into the function name it emits — a live turn
+    produced `update_lead_state<|channel|>analysis` — and Groq rejects the call against
+    request.tools before we ever see it, so we cannot sanitise it on our side. It is a
+    sampling artifact, not a schema problem, so drawing again usually clears it. Groq
+    labels exactly this class `tool_use_failed`.
+    """
+    return status_code == 400 and "tool_use_failed" in body
+
+
+async def complete(config: AgentConfig, messages: list[dict], specs: list[dict],
+                   resamples: int = 1) -> dict:
     """One LLM round trip. Returns the assistant message, tool calls included."""
-    if not GROQ_KEY:
+    if not LLM_KEY:
         # ponytail: no key means text-mode smoke testing, never a silent production fallback
-        return {"role": "assistant", "content": "[no GROQ_API_KEY set]"}
+        return {"role": "assistant", "content": "[no LLM_API_KEY / GROQ_API_KEY set]"}
     payload = {"model": config.llm_model, "messages": messages, "stream": False,
                "tools": [{"type": "function", "function": s} for s in specs]}
     async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.post(GROQ_URL, json=payload,
-                              headers={"Authorization": f"Bearer {GROQ_KEY}"})
-        if r.is_error:
+        for attempt in range(resamples + 1):
+            r = await client.post(LLM_URL, json=payload,
+                                  headers={"Authorization": f"Bearer {LLM_KEY}"})
+            if not r.is_error:
+                return r.json()["choices"][0]["message"]
+            if attempt < resamples and _should_resample(r.status_code, r.text):
+                # ponytail: one extra round trip, no backoff. A live call cannot wait, and
+                # the alternative is the prospect hearing the fallback line for this turn.
+                print(f"[proxy] resampling after tool_use_failed: {r.text[:200]}")
+                continue
+            wait = _retry_after(r.status_code, r.headers, r.text)
+            if attempt < resamples and wait is not None:
+                print(f"[proxy] rate limited, waiting {wait}s then retrying")
+                await asyncio.sleep(wait)
+                continue
             # Groq names the offending field in the body. Without it a 400 here is
             # indistinguishable from any other failure, and every turn just becomes the
             # fallback line — which is what "it says it has to look that up" sounds like.
-            raise RuntimeError(f"Groq {r.status_code}: {r.text[:400]}")
-        return r.json()["choices"][0]["message"]
+            raise RuntimeError(f"LLM {r.status_code} from {LLM_URL}: {r.text[:400]}")

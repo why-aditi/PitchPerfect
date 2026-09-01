@@ -103,10 +103,28 @@ async def main():
     assert outcomes == ["meeting_booked"], outcomes
     assert kinds.count("lead_state") >= 6, kinds
 
-    # Booking is idempotent per session (PRD 8).
+    # Booking is idempotent per session (PRD 8): the same slot twice is one meeting.
+    booked_iso = [e["data"]["detail"]["slot_iso"] for e in events
+                  if e["type"] == "outcome" and e["data"]["kind"] == "meeting_booked"][0]
     again = proxy.run_tool(SID, "book_meeting",
-                           {"slot_iso": "2026-09-02T10:00:00+00:00", "email": "ops@acme.test"})
-    assert again.get("already_booked") and again["slot_iso"].startswith("2026-09-01"), again
+                           {"slot_iso": booked_iso, "email": "ops@acme.test", "name": "Acme"})
+    assert again.get("already_booked") and again["slot_iso"] == booked_iso, again
+
+    # A different slot is not a second meeting either — it is the same one, moved. Refusing
+    # here is what "actually, can we do Wednesday?" used to sound like on a live call. The
+    # settle window has to be stepped past: seconds after booking, a new slot is the model
+    # repeating itself, and honouring it emails the prospect twice about one demo.
+    from .tools import calendar as _cal
+    _cal._booked[SID]["booked_at"] -= _cal.SETTLE_S + 1
+    # Seconds after booking, a new slot is the model repeating itself rather than the
+    # prospect moving the meeting; the settle window has to be stepped past deliberately.
+    from .tools import calendar as _cal
+    _cal._booked[SID]["booked_at"] -= _cal.SETTLE_S + 1
+    moved = proxy.run_tool(SID, "book_meeting",
+                           {"slot_iso": "2026-09-02T10:00:00+00:00", "email": "ops@acme.test", "name": "Acme"})
+    assert moved["slot_iso"].startswith("2026-09-02"), moved
+    assert moved["rescheduled_from"] == booked_iso, moved
+    assert moved["booking_id"] == again["booking_id"], "moving must not open a second booking"
 
     # A tool the model calls wrongly must come back as data, not a 500.
     bad = proxy.run_tool(SID, "get_battlecard", {"competitor": "NobodyCorp"})

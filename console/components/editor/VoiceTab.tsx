@@ -5,8 +5,11 @@ import { Button, Field, Input, Slider, Toggle } from "@/components/ui";
 import { Group, Hint, JsonField, ListEditor } from "./bits";
 
 /**
- * PRD 12 reference values, which are also the Voice() defaults in models.py. Anything that
- * differs from these is a deliberate choice by the operator, and the tab says so.
+ * The Voice() defaults in models.py. Anything that differs from these is a deliberate
+ * choice by the operator, and the tab says so — so this list has to track models.py, not
+ * the PRD. silence_duration_ms and max_wait_ms have both moved off the PRD 12
+ * reference after a live call where the agent talked over the prospect; leaving the old
+ * numbers here would badge every new agent CHANGED against a default it never had.
  */
 export const DEFAULTS: Voice = {
   tts_vendor: "",
@@ -15,8 +18,8 @@ export const DEFAULTS: Voice = {
   interrupt_duration_ms: 160,
   speaking_interrupt_duration_ms: 320,
   prefix_padding_ms: 800,
-  silence_duration_ms: 320,
-  max_wait_ms: 3000,
+  silence_duration_ms: 700,
+  max_wait_ms: 5000,
   interruption_enabled: true,
   filler_phrases: ["One moment.", "Let me check that.", "Pulling that up."],
 };

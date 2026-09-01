@@ -183,3 +183,28 @@ def test_a_realistic_booked_call_qualifies():
                      competitor_mentions=["Northbeam"], next_action="book_demo")
     assert s["bant"] == {"budget": 1, "authority": 0, "need": 3, "timeline": 2}
     assert s["qualification"] == "warm", s["bant"]
+
+
+def test_numbers_arriving_as_strings_do_not_kill_the_turn():
+    """ministral-8b returned BANT scores as strings on a live call; max("2", 0) raised and
+    the agent spent every tool hop retrying, then escalated for no reason."""
+    lead = state.update("s", seat_count="200", bant={"budget": "2", "authority": 3})
+    assert lead["seat_count"] == 200
+    assert lead["bant"]["budget"] == 2 and lead["bant"]["authority"] == 3
+
+
+def test_nonsense_numbers_are_dropped_rather_than_stored():
+    lead = state.update("s", seat_count="a couple hundred", bant={"need": "lots"})
+    assert lead["seat_count"] is None
+    assert lead["bant"]["need"] == 0
+
+
+def test_out_of_range_scores_are_clamped():
+    """The schema says 0-3. A model reading it as a percentage would pin the lead hot."""
+    lead = state.update("s", bant={"budget": 90, "authority": -5})
+    assert lead["bant"]["budget"] == 3 and lead["bant"]["authority"] == 0
+
+
+def test_a_bant_value_that_is_not_a_dict_is_ignored():
+    assert state.update("s", bant="high")["bant"] == {"budget": 0, "authority": 0,
+                                                      "need": 0, "timeline": 0}
