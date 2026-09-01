@@ -6,14 +6,15 @@ discipline instead of the API (PRD 8).
 """
 from . import calendar, crm, escalation  # noqa: F401  (the proxy dispatches through these)
 from .battlecards import get_battlecard
-from .calendar import book_meeting, check_slots
+from .calendar import book_meeting, check_slots, clean_email, was_actually_said
 from .crm import create_deal, sync_contact
 from .escalation import escalate_to_human
 from .pricing import get_pricing
 from ..models import AgentConfig
 
 __all__ = ["get_pricing", "get_battlecard", "check_slots", "book_meeting", "escalate_to_human",
-           "sync_contact", "create_deal", "specs_for", "SPECS"]
+           "sync_contact", "create_deal", "clean_email", "was_actually_said",
+           "specs_for", "SPECS"]
 
 # Which config switch gates each tool. update_lead_state has no switch: without it the
 # agent cannot remember anything, which is the whole product.
@@ -25,7 +26,28 @@ GATED_BY = {
     "escalate_to_human": "escalation",
 }
 
-SPECS = [
+def _nullable(spec: dict) -> dict:
+    """Let every optional field accept null.
+
+    Models emit `"company": null` for fields they have nothing to say about, and Groq's
+    tool-call validator rejects that against `type: "string"` with a 400 — which fails the
+    whole turn, so the prospect hears the fallback line for a tool call that was fine.
+    Every optional field here is optional precisely because null and absent mean the same
+    thing, and state.update drops both. Required fields are left strict on purpose.
+    """
+    params = spec.get("parameters", {})
+    required = set(params.get("required", []))
+    for name, prop in params.get("properties", {}).items():
+        if name in required:
+            continue
+        if "enum" in prop:
+            prop["enum"] = [*prop["enum"], None]
+        elif isinstance(prop.get("type"), str):
+            prop["type"] = [prop["type"], "null"]
+    return spec
+
+
+SPECS = [_nullable(s) for s in [
     # Descriptions are terse on purpose: the whole block is resent on every request and is
     # the largest part of the payload. Each keeps the one phrase that decides when the tool
     # applies, and update_lead_state keeps its enums, which constrain the values we store.
@@ -54,16 +76,27 @@ SPECS = [
          "bant": {"type": "object", "description": "0-3 each: budget, authority, need, timeline"},
          "next_action": {"enum": ["book_demo", "send_followup", "escalate"]},
          "notes": {"type": "array", "items": {"type": "string"}}}}},
-    {"name": "check_slots", "description": "Real availability, up to 5 slots.",
-     "parameters": {"type": "object", "properties": {"days_ahead": {"type": "integer"}}}},
-    {"name": "book_meeting", "description": "Book the demo. Needs an email.",
+    {"name": "check_slots",
+     "description": "Real availability, up to 5 slots. Offer two of them, never the list.",
      "parameters": {"type": "object", "properties": {
-         "slot_iso": {"type": "string"}, "email": {"type": "string"}, "name": {"type": "string"}},
-         "required": ["slot_iso", "email"]}},
+         "days_ahead": {"type": "integer"},
+         "timezone_name": {"type": "string",
+                           "description": "Their timezone, however they said it: "
+                                          "'Eastern', 'PST', 'Europe/Berlin'. Ask if unsaid."}}}},
+    {"name": "book_meeting",
+     "description": "Book the demo, or move it if one is already booked. Needs a name AND "
+                    "an email — ask for both before calling this.",
+     "parameters": {"type": "object", "properties": {
+         "slot_iso": {"type": "string", "description": "Exactly the iso from check_slots."},
+         "email": {"type": "string", "description": "As they said it; spoken form is fine."},
+         "name": {"type": "string", "description": "Who the invite is for, as they gave it. "
+                                                   "Never taken from the email address."},
+         "timezone_name": {"type": "string"}},
+         "required": ["slot_iso", "email", "name"]}},
     {"name": "escalate_to_human", "description": "Hand off to a human rep on this call.",
      "parameters": {"type": "object", "properties": {"reason": {"type": "string"}},
                     "required": ["reason"]}},
-]
+]]
 
 
 def specs_for(config: AgentConfig) -> list[dict]:

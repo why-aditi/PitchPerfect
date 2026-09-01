@@ -340,7 +340,7 @@ Vantage: a fictional SaaS with a real-looking pricing table, generated from the 
 | Voice minutes | Conversational AI minutes are the scarce resource — text-mode testing for everything except integration runs |
 | Failure behaviour | LLM timeout or tool error means the engine's failure message covers the spoken side; the proxy still logs the lead and creates a follow-up task |
 | Secrets | Integration credentials are write-only across the API and never appear in a console read response, a log line, or an event payload |
-| Privacy | Announce at call start that the call is AI-handled and transcribed. The engine's opt-out parameter disables Agora-side session retention if we want it |
+| Privacy | Announce at call start that the call is AI-handled. Transcription is deliberately not announced — the greeting is the only place either notice is spoken, and the second sentence cost more warmth than it bought. The engine's opt-out parameter disables Agora-side session retention if we want it |
 
 ---
 

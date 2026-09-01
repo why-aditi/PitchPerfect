@@ -44,8 +44,16 @@ class Knowledge(BaseModel):
 
 class Persona(BaseModel):
     identity: str
-    greeting: str = ("Hi, you're speaking with an AI sales assistant. This call is "
-                     "transcribed. What can I help you with?")
+    # The first thing anyone hears, and it sets the register for the whole call — a stiff
+    # greeting makes every warm line after it sound like a script.
+    #
+    # The transcription notice was dropped on the operator's instruction. PRD 11 asks for
+    # both "AI-handled and transcribed" and this greeting is the only place either is said,
+    # so the spec and the default now disagree by one half. The AI disclosure stays.
+    # Not opened with a short interjection: "Hi there," on its own gets flushed to TTS as
+    # its own clause and lands as an abrupt bare "Hi!" before the real sentence starts.
+    greeting: str = ("Thanks for reaching out — I'm an AI assistant here on the sales team. "
+                     "What can I help you with today?")
     goal_hierarchy: list[str] = ["book a demo", "qualify with BANT",
                                  "create a follow-up", "escalate to a human"]
     objection_strategies: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_STRATEGIES))
@@ -69,8 +77,14 @@ class Voice(BaseModel):
     interrupt_duration_ms: int = 160
     speaking_interrupt_duration_ms: int = 320   # raise this if "mm-hmm" cuts the agent off
     prefix_padding_ms: int = 800
-    silence_duration_ms: int = 320
-    max_wait_ms: int = 3000
+    # Both raised after a live call where the agent talked over the prospect repeatedly.
+    # 480ms still cut people off mid-thought — someone counting seats aloud, or saying an
+    # email address, pauses longer than that. And max_wait is the harder of the two: it is
+    # a hard cap that makes the agent reply even when end-of-turn is ambiguous, so at 3s it
+    # was barging in on any sentence that took longer than three seconds to say. Tune per
+    # deployment — a noisy line wants more, a brisk one less.
+    silence_duration_ms: int = 700
+    max_wait_ms: int = 5000
     interruption_enabled: bool = True
     filler_phrases: list[str] = ["One moment.", "Let me check that.", "Pulling that up."]
 
@@ -88,7 +102,19 @@ class AgentConfig(BaseModel):
     voice: Voice = Voice()
     knowledge: Knowledge = Knowledge()
     tools_enabled: ToolsEnabled = ToolsEnabled()
-    llm_model: str = "openai/gpt-oss-20b"   # verified live; llama-3.3-70b-versatile was retired by Groq
+    # Must name a model the provider behind LLM_URL actually serves — the id is not
+    # portable, and Groq's "openai/gpt-oss-20b" is Cerebras's "gpt-oss-120b". Default
+    # tracks Cerebras because Groq's free tier is 8000 TPM, about two tool-using turns a
+    # minute, which is not enough to finish a call.
+    # Change this with LLM_URL, never on its own — a model id from the wrong provider fails
+    # every turn of a call. Groq's equivalent is "openai/gpt-oss-20b", but Groq's free tier
+    # is 8000 tokens/minute, about two tool-using turns, and a real call died on it.
+    # mistral-large is a 403 on the free tier; small is the most capable one it serves.
+    # Picked by measurement against the other three the free tier serves: on the same four
+    # turns it was the only one to record the lead as it went (4 update_lead_state calls,
+    # reaching warm) rather than arriving at the booking with an empty panel. mistral-large
+    # is a 403 here, and ministral-8b looped itself into a spurious escalation.
+    llm_model: str = "mistral-medium-latest"
 
 
 class AgentSecrets(BaseModel):

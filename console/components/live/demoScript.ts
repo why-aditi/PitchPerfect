@@ -91,9 +91,9 @@ export function demoScript(now: number): Step[] {
     say(0, "prospect", 1, "Hi — we're looking at Vantage for our ops team. What does it run for about twenty users?"),
     tool(900, "update_lead_state", "seat_count 20, use_case ops team rollout"),
     lead(1100, discovery),
-    tool(1700, "get_pricing", "Growth · 20 seats · $18 per seat / month"),
-    say(2400, "agent", 1, "Growth is eighteen dollars per seat per month at twenty seats, and that", false),
-    say(3300, "agent", 1, "Growth is eighteen dollars per seat per month at twenty seats, and that includes the shared workload views —"),
+    tool(1700, "get_pricing", "Growth · 20 seats · $39 per seat / month"),
+    say(2400, "agent", 1, "Growth is thirty-nine a seat at twenty seats, and that", false),
+    say(3300, "agent", 1, "Growth is thirty-nine a seat at twenty seats, and that includes the shared workload views —"),
 
     // Beat 2 — the prospect starts before the agent has finished. The agent's line is left
     // where it was cut; it is never resumed.
@@ -105,13 +105,13 @@ export function demoScript(now: number): Step[] {
     say(8400, "prospect", 3, "Actually, it'd be closer to two hundred users."),
     tool(9000, "update_lead_state", "seat_count 20 → 200"),
     lead(9200, resized),
-    tool(9800, "get_pricing", "Enterprise · 200 seats · $14 per seat / month"),
-    say(10600, "agent", 3, "Two hundred puts you on Enterprise — fourteen a seat, so twenty-eight hundred a month."),
+    tool(9800, "get_pricing", "Enterprise · 200 seats · $32 per seat / month"),
+    say(10600, "agent", 3, "Two hundred puts you on Enterprise — thirty-two a seat, so six thousand four hundred a month."),
 
     say(12600, "prospect", 4, "That's a lot more than we budgeted."),
     tool(13100, "update_lead_state", "objection pricing, budget_signal stretch"),
     lead(13300, objected),
-    say(14000, "agent", 4, "Fair. Per seat it's four dollars cheaper than the twenty-seat price — the total moved, the unit cost came down. If this quarter's budget is fixed, we can start fifty seats and expand on the same rate."),
+    say(14000, "agent", 4, "Fair. Per seat it's seven dollars cheaper than the twenty-seat price — the total moved, the unit cost came down. If this quarter's budget is fixed, we can start fifty seats and expand on the same rate."),
 
     say(16800, "prospect", 5, "Could we see an enterprise demo?"),
     tool(17300, "check_slots", "3 slots · Tue 10:00 · Wed 14:30 · Thu 09:00"),
@@ -129,7 +129,7 @@ export function demoScript(now: number): Step[] {
         data: { kind: "meeting_booked", detail: { slot: "Wed 14:30", email: "dana@harborlogistics.com" } },
       },
     },
-    say(22400, "agent", 6, "Booked — Wednesday at fourteen thirty. The invite is on its way to dana@harborlogistics.com."),
+    say(22400, "agent", 6, "Booked — Wednesday at half two. The invite is on its way to dana@harborlogistics.com."),
     {
       at: 24500,
       event: {

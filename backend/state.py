@@ -3,6 +3,20 @@
 _STORE: dict[str, dict] = {}
 
 _ARRAYS = ("objections_raised", "competitor_mentions", "notes")
+_INTS = ("seat_count",)
+
+
+def _as_int(value) -> int | None:
+    """A number, or None if what arrived cannot be one.
+
+    Models send numbers as strings often enough that it cannot be fatal: a live call had
+    ministral-8b return BANT scores as "2", which made max("2", 0) raise and burned every
+    tool hop in the turn on a retry loop that ended in a spurious escalation.
+    """
+    try:
+        return int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return None
 
 
 def new_state(session_id: str) -> dict:
@@ -39,7 +53,17 @@ def update(session_id: str, **fields) -> dict:
                 if item not in state[key]:
                     state[key].append(item)
         elif key == "bant":
-            state["bant"].update({k: v for k, v in value.items() if k in state["bant"]})
+            if not isinstance(value, dict):
+                continue
+            scored = {k: _as_int(v) for k, v in value.items() if k in state["bant"]}
+            # Clamped, not just coerced: the schema says 0-3 and a model that reads it as a
+            # percentage would otherwise pin qualification to hot for the rest of the call.
+            state["bant"].update({k: max(0, min(3, v)) for k, v in scored.items()
+                                  if v is not None})
+        elif key in _INTS:
+            number = _as_int(value)
+            if number is not None:
+                state[key] = number
         else:
             state[key] = value
     # The derived scores are a floor, never a ceiling: the model sees the conversation and

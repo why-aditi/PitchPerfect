@@ -54,7 +54,11 @@ def start_payload(config: AgentConfig, session_id: str, channel: str, token: str
                 "api_key": os.getenv("LLM_PROXY_SECRET", ""),
                 "style": "openai",
                 "system_messages": [],          # the proxy owns the prompt
-                "max_history": 32,
+# Every one of these is resent on every request, and the whole payload counts
+                # against the LLM's tokens-per-minute. 32 turns put a real call over Groq's
+                # free-tier 8000 TPM about four turns in; the proxy collapses anything older
+                # than its own keep_turns anyway, so the tail was being paid for twice.
+                "max_history": 12,
                 "greeting_message": config.persona.greeting,
                 "failure_message": "Give me one moment.",
                 "params": {"model": config.llm_model, "stream": True},
@@ -77,7 +81,9 @@ def start_payload(config: AgentConfig, session_id: str, channel: str, token: str
             "interruption": {"enable": voice.interruption_enabled, "mode": "start_of_speech"},
             "filler_words": {
                 "enable": bool(voice.filler_phrases),
-                "trigger": {"mode": "fixed_time", "fixed_time_config": {"response_wait_ms": 1500}},
+                # A tool hop is two LLM round trips, so 1500ms landed after the answer often
+                # enough to be useless. 1000 covers the gap the prospect actually hears.
+                "trigger": {"mode": "fixed_time", "fixed_time_config": {"response_wait_ms": 1000}},
                 "content": {"mode": "static", "static_config": {
                     "phrases": voice.filler_phrases, "selection_rule": "shuffle"}},
             },

@@ -103,3 +103,24 @@ def test_unknown_competitor_returns_explicit_no_data(config):
     assert result["competitor"] == "NobodyCorp"
     # The model must surface this rather than paper over it (PRD 8).
     assert "don't have data" in result["instruction"]
+
+
+def test_the_quote_arrives_ready_to_read(config):
+    """A live call turned a $780 total into "seventy-eight a month". The model is fine at the
+    arithmetic and unreliable at rendering it, so it is asked to do neither."""
+    assert get_pricing(config, seats=20)["spoken"] == "$39 a seat, $780 a month for 20 seats"
+    assert get_pricing(config, seats=200)["spoken"] == "$32 a seat, $6,400 a month for 200 seats"
+    assert get_pricing(config)["spoken"] == "$19 a seat"
+
+
+def test_the_spoken_quote_uses_the_volume_break(config):
+    """Growth breaks to $34 at 50 seats; the spoken line must not still say $39."""
+    spoken = get_pricing(config, seats=60)["spoken"]
+    assert spoken == "$34 a seat, $2,040 a month for 60 seats", spoken
+
+
+def test_the_spoken_quote_matches_the_numbers_beside_it(config):
+    """The two must never drift — the console shows one and the prospect hears the other."""
+    for seats in (1, 9, 10, 49, 50, 99, 100, 249, 250, 1000):
+        quote = get_pricing(config, seats=seats)
+        assert f"{quote['monthly_total']:,.0f}" in quote["spoken"].replace(".0", ""), seats

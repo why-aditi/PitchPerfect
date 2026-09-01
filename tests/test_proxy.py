@@ -81,7 +81,8 @@ def test_lead_state_is_never_gated_off(bound, config):
 
 def test_booking_records_the_crm_identity_key_and_the_outcome(bound, events):
     proxy.run_tool(bound, "book_meeting",
-                   {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "ops@acme.test"})
+                   {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "ops@acme.test",
+                    "name": "Dana Reyes"})
     assert state.get(bound)["email"] == "ops@acme.test"
     assert state.get(bound)["next_action"] == "book_demo"
     assert [e["data"]["kind"] for e in events if e["type"] == "outcome"] == ["meeting_booked"]
@@ -95,11 +96,21 @@ def test_booking_without_an_email_is_a_handled_refusal(bound, events):
 
 def test_booking_is_idempotent_per_session(bound):
     first = proxy.run_tool(bound, "book_meeting",
-                           {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "a@b.test"})
+                           {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "a@b.test", "name": "Dana Reyes"})
     again = proxy.run_tool(bound, "book_meeting",
-                           {"slot_iso": "2026-09-09T10:00:00+00:00", "email": "a@b.test"})
+                           {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "a@b.test", "name": "Dana Reyes"})
     assert again["already_booked"]
     assert again["slot_iso"] == first["slot_iso"]
+
+
+def test_moving_a_meeting_does_not_open_a_second_deal(bound, events):
+    """The CRM is the operator's, and a duplicate deal in it is worse than a missing update."""
+    proxy.run_tool(bound, "book_meeting",
+                   {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "a@b.test", "name": "Dana Reyes"})
+    proxy.run_tool(bound, "book_meeting",
+                   {"slot_iso": "2026-09-09T10:00:00+00:00", "email": "a@b.test", "name": "Dana Reyes"})
+    outcomes = [e for e in events if e["type"] == "outcome"]
+    assert len(outcomes) == 1, "one demo, one outcome, however many times it moves"
 
 
 def test_escalation_publishes_summary_and_outcome(bound, events):
@@ -211,7 +222,7 @@ def restore_complete():
 def test_rebooking_does_not_announce_a_second_outcome(bound, events):
     """A live run booked once and reported meeting_booked twice, because the idempotent
     path still looked like a success."""
-    args = {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "a@b.test"}
+    args = {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "a@b.test", "name": "Dana Reyes"}
     proxy.run_tool(bound, "book_meeting", args)
     proxy.run_tool(bound, "book_meeting", args)
     assert [e["data"]["kind"] for e in events if e["type"] == "outcome"] == ["meeting_booked"]
@@ -244,3 +255,34 @@ def test_escalation_survives_a_session_with_no_engine_agent(bound, events):
     """Text-mode sessions never joined a channel; the escalation must still be published."""
     proxy.run_tool(bound, "escalate_to_human", {"reason": "legal question"})
     assert [e["type"] for e in events if e["type"] == "escalation"] == ["escalation"]
+
+
+def test_a_leaked_channel_token_in_a_tool_name_is_resampled_not_raised():
+    """gpt-oss emits `update_lead_state<|channel|>analysis` and Groq rejects it upstream,
+    so the only lever we have is drawing again."""
+    leaked = ('{"error":{"code":"tool_use_failed","message":"attempted to call tool '
+              "'update_lead_state<|channel|>analysis' which was not in request.tools\"}}")
+    assert proxy._should_resample(400, leaked)
+    assert not proxy._should_resample(400, '{"error":{"code":"invalid_api_key"}}')
+    assert not proxy._should_resample(429, '{"error":{"code":"rate_limit_exceeded"}}')
+    assert not proxy._should_resample(500, "tool_use_failed")
+
+
+def test_a_short_rate_limit_is_waited_out_and_a_long_one_is_not():
+    """Groq names the wait. Under a few seconds the filler covers it; past that the
+    prospect is just sitting in silence and the fallback line is the kinder answer."""
+    body = ('{"error":{"message":"Rate limit reached for model `openai/gpt-oss-20b` ... '
+            'Please try again in 3.5625s.","code":"rate_limit_exceeded"}}')
+    assert proxy._retry_after(429, {}, body) == 3.5625
+    assert proxy._retry_after(429, {"retry-after": "2"}, body) == 2.0, "header wins over prose"
+    assert proxy._retry_after(429, {}, "try again in 47.5s") is None, "too long to hold a call"
+    assert proxy._retry_after(429, {}, "no number here") is None
+    assert proxy._retry_after(400, {}, body) is None, "only a rate limit is worth waiting on"
+
+
+def test_a_mangled_email_never_reaches_the_lead_state(bound):
+    """update_lead_state is a trust boundary too — ASR hands it whatever it heard."""
+    proxy.run_tool(bound, "update_lead_state", {"company": "Acme", "email": "gmail.com"})
+    assert state.get(bound)["email"] is None, "half an address looks captured, so nothing asks again"
+    proxy.run_tool(bound, "update_lead_state", {"email": "dana dot reyes at acme dot test"})
+    assert state.get(bound)["email"] == "dana.reyes@acme.test"
