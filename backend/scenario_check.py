@@ -16,7 +16,7 @@ SID = "sess_test"
 events: list[dict] = []
 
 EXPECT_TOOLS = ["get_pricing", "get_battlecard", "update_lead_state",
-                "check_slots", "book_meeting", "escalate_to_human"]
+                "check_slots", "book_meeting", "cancel_meeting", "escalate_to_human"]
 
 
 def _call(tool, **args):

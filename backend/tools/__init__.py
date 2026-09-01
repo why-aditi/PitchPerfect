@@ -6,13 +6,15 @@ discipline instead of the API (PRD 8).
 """
 from . import calendar, crm, escalation  # noqa: F401  (the proxy dispatches through these)
 from .battlecards import get_battlecard
-from .calendar import book_meeting, check_slots, clean_email, was_actually_said
+from .calendar import (book_meeting, cancel_meeting, check_slots, clean_email,
+                       was_actually_said)
 from .crm import create_deal, sync_contact
 from .escalation import escalate_to_human
 from .pricing import get_pricing
 from ..models import AgentConfig
 
-__all__ = ["get_pricing", "get_battlecard", "check_slots", "book_meeting", "escalate_to_human",
+__all__ = ["get_pricing", "get_battlecard", "check_slots", "book_meeting",
+           "cancel_meeting", "escalate_to_human",
            "sync_contact", "create_deal", "clean_email", "was_actually_said",
            "specs_for", "SPECS"]
 
@@ -23,6 +25,7 @@ GATED_BY = {
     "get_battlecard": "battlecards",
     "check_slots": "calendar",
     "book_meeting": "calendar",
+    "cancel_meeting": "calendar",
     "escalate_to_human": "escalation",
 }
 
@@ -93,6 +96,10 @@ SPECS = [_nullable(s) for s in [
                                                    "Never taken from the email address."},
          "timezone_name": {"type": "string"}},
          "required": ["slot_iso", "email", "name"]}},
+    {"name": "cancel_meeting",
+     "description": "Call off the demo booked on THIS call. Cannot touch any other booking.",
+     "parameters": {"type": "object", "properties": {
+         "reason": {"type": "string", "description": "What they said, briefly."}}}},
     {"name": "escalate_to_human", "description": "Hand off to a human rep on this call.",
      "parameters": {"type": "object", "properties": {"reason": {"type": "string"}},
                     "required": ["reason"]}},

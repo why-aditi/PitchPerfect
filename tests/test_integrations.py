@@ -11,10 +11,11 @@ import pytest
 from backend import agents
 from backend.models import AgentConfig, AgentSecrets, Persona
 from backend.tools import crm
+from backend.tools import SPECS
 from backend.tools import calendar as cal
 from backend.tools import calendar as cal
 from backend.tools.calendar import (
-    _api_error, book_meeting, check_slots, clean_email)
+    _api_error, book_meeting, cancel_meeting, check_slots, clean_email)
 from backend.tools.escalation import escalate_to_human, summarise
 
 LEAD = {
@@ -292,3 +293,47 @@ def test_half_an_address_is_not_an_address():
     assert clean_email("um, hang on") is None
     assert clean_email("") is None
     assert clean_email("Dana dot Reyes at gmail dot com") == "dana.reyes@gmail.com"
+
+
+# --- cancelling, and why it cannot reach anyone else's meeting -----------------------------
+
+def test_cancelling_takes_no_booking_id_from_the_model():
+    """The access control is structural, not a check that could be argued past.
+
+    If a booking id or an attendee email were ever added as a parameter, a caller could
+    cancel a stranger's meeting by guessing, overhearing, or simply claiming an address.
+    This test fails the moment someone adds one.
+    """
+    spec = next(s for s in SPECS if s["name"] == "cancel_meeting")
+    assert set(spec["parameters"]["properties"]) == {"reason"}, spec["parameters"]["properties"]
+
+    booking = next(s for s in SPECS if s["name"] == "book_meeting")
+    assert "booking_id" not in booking["parameters"]["properties"]
+    assert "uid" not in booking["parameters"]["properties"]
+
+
+def test_cancelling_only_reaches_what_this_call_booked(secrets):
+    """Two calls in flight at once. One must not be able to cancel the other's meeting."""
+    theirs = book_meeting(secrets, "2026-09-01T10:00:00+00:00", "dana@acme.test",
+                          name="Dana Reyes", session_id="their_call")
+    mine = cancel_meeting(secrets, reason="changed my mind", session_id="my_call")
+    assert mine["error"] == "nothing_booked"
+    assert cal._booked["their_call"]["booking_id"] == theirs["booking_id"], "untouched"
+
+
+def test_cancelling_with_nothing_booked_sends_them_to_a_human(secrets):
+    """A prospect ringing back about yesterday's demo is an unauthenticated voice. The
+    honest answer is a colleague, not a lookup by email."""
+    result = cancel_meeting(secrets, reason="can't make it", session_id="fresh")
+    assert result["error"] == "nothing_booked"
+    assert "escalate_to_human" in result["instruction"]
+
+
+def test_a_cancelled_meeting_is_forgotten_so_the_call_can_rebook(secrets):
+    book_meeting(secrets, "2026-09-01T10:00:00+00:00", "a@b.test",
+                 name="Dana Reyes", session_id="s")
+    assert cancel_meeting(secrets, reason="clash", session_id="s")["cancelled"]
+    assert "s" not in cal._booked
+    again = book_meeting(secrets, "2026-09-30T10:00:00+00:00", "a@b.test",
+                         name="Dana Reyes", session_id="s")
+    assert not again.get("already_booked") and again["slot_iso"] == "2026-09-30T10:00:00+00:00"
