@@ -3,10 +3,11 @@
 The operator never sees this payload and never opens the Agora dashboard. Fields marked
 [cfg] in the PRD come from the agent record; the rest are fixed.
 """
-import base64
+import functools
 import os
 
-import httpx
+from agora_agent import AsyncAgora, Area
+from agora_agent.core.api_error import ApiError
 
 from . import token2
 from .models import AgentConfig
@@ -15,12 +16,20 @@ APP_ID = os.getenv("AGORA_APP_ID", "")
 APP_CERTIFICATE = os.getenv("AGORA_APP_CERTIFICATE", "")
 CUSTOMER_ID = os.getenv("AGORA_CUSTOMER_ID", "")
 CUSTOMER_SECRET = os.getenv("AGORA_CUSTOMER_SECRET", "")
-BASE = f"https://api.agora.io/api/conversational-ai-agent/v2/projects/{APP_ID}"
+# Routes the engine's REST calls at a region. US is api-us-west-1; a project provisioned
+# elsewhere needs its own, which no amount of correct code can guess.
+AREA = getattr(Area, os.getenv("AGORA_AREA", "US"))
 
 
-def _auth() -> dict:
-    raw = base64.b64encode(f"{CUSTOMER_ID}:{CUSTOMER_SECRET}".encode()).decode()
-    return {"Authorization": f"Basic {raw}", "Content-Type": "application/json"}
+@functools.cache
+def client() -> AsyncAgora:
+    """The official Conversational AI Engine SDK, built once — it holds an httpx client.
+
+    Constructed lazily so importing this module never needs credentials: the tests build
+    payloads without them, and a missing key should fail on the call, not on the import.
+    """
+    return AsyncAgora(area=AREA, app_id=APP_ID, app_certificate=APP_CERTIFICATE,
+                      customer_id=CUSTOMER_ID, customer_secret=CUSTOMER_SECRET, timeout=20)
 
 
 def build_token(channel: str, uid: int, expire_s: int = 3600) -> str:
@@ -99,28 +108,37 @@ def start_payload(config: AgentConfig, session_id: str, channel: str, token: str
 
 
 async def join(payload: dict) -> dict:
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.post(f"{BASE}/join", json=payload, headers=_auth())
-        if r.is_error:
-            # The engine names the offending field in the body and nowhere else, so a bare
-            # status code turns a one-line fix into an afternoon of guessing.
-            raise RuntimeError(f"Agora join failed {r.status_code}: {r.text[:500]}")
-        return r.json()
+    """Start an engine agent. The payload is still built by hand (start_payload) because
+    every field in it is tuned; the SDK validates it into the same request the REST API
+    takes, so nothing is lost by handing it over whole.
+    """
+    try:
+        started = await client().agents.start(
+            APP_ID, name=payload["name"], properties=payload["properties"])
+    except ApiError as exc:
+        # The engine names the offending field in the body and nowhere else, so a bare
+        # status code turns a one-line fix into an afternoon of guessing.
+        raise RuntimeError(f"Agora join failed {exc.status_code}: {str(exc.body)[:500]}") from exc
+    return {"agent_id": started.agent_id}
 
 
 async def leave(agent_id: str) -> None:
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.post(f"{BASE}/agents/{agent_id}/leave", headers=_auth())
-        if r.status_code == 404:
+    try:
+        await client().agents.stop(APP_ID, agent_id)
+    except ApiError as exc:
+        if exc.status_code == 404:
             return  # already ended or never started; hanging up twice is not an error
-        if r.is_error:
-            raise RuntimeError(f"Agora leave failed {r.status_code}: {r.text[:300]}")
+        raise RuntimeError(f"Agora leave failed {exc.status_code}: {str(exc.body)[:300]}") from exc
 
 
 async def speak(agent_id: str, text: str, interrupt: bool = True) -> None:
-    """Say a fixed line over TTS — used for the escalation hand-off line."""
-    async with httpx.AsyncClient(timeout=20) as client:
-        r = await client.post(f"{BASE}/agents/{agent_id}/speak",
-                              json={"text": text, "interrupt": interrupt}, headers=_auth())
-        if r.is_error:
-            raise RuntimeError(f"Agora speak failed {r.status_code}: {r.text[:300]}")
+    """Say a fixed line over TTS — used for the escalation hand-off line.
+
+    priority, not a boolean: INTERRUPT cuts through whatever the agent is saying, APPEND
+    waits its turn. A hand-off that queues behind a pricing monologue arrives too late.
+    """
+    try:
+        await client().agents.speak(APP_ID, agent_id, text=text,
+                                    priority="INTERRUPT" if interrupt else "APPEND")
+    except ApiError as exc:
+        raise RuntimeError(f"Agora speak failed {exc.status_code}: {str(exc.body)[:300]}") from exc
