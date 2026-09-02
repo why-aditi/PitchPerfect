@@ -127,8 +127,28 @@ def _api_error(exc: httpx.HTTPStatusError) -> dict:
         return {"error": "calendar_unavailable",
                 "instruction": "Booking is down. Say you will email the invite instead, and "
                                "call update_lead_state with next_action send_followup."}
-    return {"error": "booking_failed", "status": status,
+    detail = _detail(exc.response)
+    if status == 400 and "email" in detail:
+        # A live call lost a booking to email_domain_cannot_receive_mail and the prospect
+        # was told only that it could not be locked in — so nobody learned the address was
+        # the problem, and the same address was tried twice more.
+        return {"error": "email_rejected", "detail": detail,
+                "instruction": "That address was refused as one that cannot receive mail. "
+                               "Tell them so, read back what you heard, and ask for another "
+                               "address to send the invite to."}
+    return {"error": "booking_failed", "status": status, "detail": detail,
             "instruction": "Say you could not lock that in, and offer to email the invite."}
+
+
+def _detail(response) -> str:
+    """Cal.com's own words about what it refused, which are the only actionable part."""
+    try:
+        body = response.json()
+    except ValueError:
+        return (response.text or "")[:200]
+    inner = body.get("error")
+    message = body.get("message") or (inner.get("message") if isinstance(inner, dict) else inner)
+    return str(message or "")[:200]
 
 
 def check_slots(secrets: AgentSecrets, days_ahead: int = 5, timezone_name: str = "UTC") -> dict:

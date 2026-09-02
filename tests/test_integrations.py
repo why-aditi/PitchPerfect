@@ -265,7 +265,9 @@ def test_binding_lifecycle(config, secrets):
 # --- what the agent is told when Cal.com says no -----------------------------------------
 
 class _Resp:
-    def __init__(self, status): self.response = type("r", (), {"status_code": status})()
+    def __init__(self, status, body=None):
+        self.response = type("r", (), {"status_code": status, "text": "",
+                                       "json": lambda self=None, b=body or {}: b})()
 
 
 def test_a_taken_slot_tells_the_agent_to_offer_another():
@@ -280,6 +282,20 @@ def test_a_rejected_key_tells_the_agent_to_fall_back_to_email():
     result = _api_error(_Resp(401))
     assert result["error"] == "calendar_unavailable"
     assert "send_followup" in result["instruction"]
+
+
+def test_an_undeliverable_address_asks_for_a_different_one():
+    """Cal.com refuses a domain that cannot receive mail. "I could not lock that in" leaves
+    the prospect with no idea their own address was the thing that failed."""
+    result = _api_error(_Resp(400, {"message": "email_domain_cannot_receive_mail"}))
+    assert result["error"] == "email_rejected"
+    assert "another" in result["instruction"]
+
+
+def test_a_bad_request_that_is_not_about_the_email_stays_a_booking_failure():
+    result = _api_error(_Resp(400, {"message": "start must be in the future"}))
+    assert result["error"] == "booking_failed"
+    assert result["detail"] == "start must be in the future", "the model needs Cal's own words"
 
 
 def test_every_booking_failure_carries_an_instruction():
