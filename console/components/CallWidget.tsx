@@ -105,9 +105,6 @@ export default function CallWidget({
         </Button>
       </div>
 
-      <p className="mt-3 text-center text-[11px] leading-snug text-faint">
-        You are speaking with an AI sales assistant. This call is transcribed.
-      </p>
     </div>
   );
 }

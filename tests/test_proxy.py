@@ -11,6 +11,12 @@ import pytest
 from backend import proxy, rtm, state
 
 
+def said(email):
+    """The prospect's own words. book_meeting checks the address against the transcript,
+    so a booking test has to put the address in the prospect's mouth first."""
+    return [{"role": "user", "content": f"sure, my email is {email}"}]
+
+
 def call(tool, **args):
     return {"id": f"c_{tool}", "type": "function",
             "function": {"name": tool, "arguments": json.dumps(args)}}
@@ -82,10 +88,34 @@ def test_lead_state_is_never_gated_off(bound, config):
 def test_booking_records_the_crm_identity_key_and_the_outcome(bound, events):
     proxy.run_tool(bound, "book_meeting",
                    {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "ops@acme.test",
-                    "name": "Dana Reyes"})
+                    "name": "Dana Reyes"}, said("ops@acme.test"))
     assert state.get(bound)["email"] == "ops@acme.test"
     assert state.get(bound)["next_action"] == "book_demo"
     assert [e["data"]["kind"] for e in events if e["type"] == "outcome"] == ["meeting_booked"]
+
+
+def test_an_email_the_prospect_never_said_is_refused(bound, events):
+    """Asked to book, a model supplies a plausible address whether or not it heard one.
+
+    A live call invented adam@example.com for a prospect who had given her own; Cal.com
+    rejected the domain, so the booking failed after the agent had already agreed a time.
+    Had it invented a deliverable address instead, a stranger would have been emailed.
+    """
+    said = [{"role": "user", "content": "sure, it is dana at acme dot test"}]
+    result = proxy.run_tool(bound, "book_meeting",
+                            {"slot_iso": "2026-09-01T10:00:00+00:00",
+                             "email": "adam@example.com", "name": "Dana Reyes"}, said)
+    assert result["error"] == "email_not_heard"
+    assert not [e for e in events if e["type"] == "outcome"], "nothing was booked"
+
+
+def test_an_email_given_in_spoken_form_still_books(bound):
+    """The guard reads the transcript, where the address is words rather than an address."""
+    said = [{"role": "user", "content": "sure, it is dana at acme dot test"}]
+    result = proxy.run_tool(bound, "book_meeting",
+                            {"slot_iso": "2026-09-01T10:00:00+00:00",
+                             "email": "dana@acme.test", "name": "Dana Reyes"}, said)
+    assert result["email"] == "dana@acme.test"
 
 
 def test_booking_without_an_email_is_a_handled_refusal(bound, events):
@@ -96,9 +126,11 @@ def test_booking_without_an_email_is_a_handled_refusal(bound, events):
 
 def test_booking_is_idempotent_per_session(bound):
     first = proxy.run_tool(bound, "book_meeting",
-                           {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "a@b.test", "name": "Dana Reyes"})
+                           {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "a@b.test", "name": "Dana Reyes"},
+                           said("a@b.test"))
     again = proxy.run_tool(bound, "book_meeting",
-                           {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "a@b.test", "name": "Dana Reyes"})
+                           {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "a@b.test", "name": "Dana Reyes"},
+                           said("a@b.test"))
     assert again["already_booked"]
     assert again["slot_iso"] == first["slot_iso"]
 
@@ -106,9 +138,11 @@ def test_booking_is_idempotent_per_session(bound):
 def test_moving_a_meeting_does_not_open_a_second_deal(bound, events):
     """The CRM is the operator's, and a duplicate deal in it is worse than a missing update."""
     proxy.run_tool(bound, "book_meeting",
-                   {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "a@b.test", "name": "Dana Reyes"})
+                   {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "a@b.test", "name": "Dana Reyes"},
+                   said("a@b.test"))
     proxy.run_tool(bound, "book_meeting",
-                   {"slot_iso": "2026-09-09T10:00:00+00:00", "email": "a@b.test", "name": "Dana Reyes"})
+                   {"slot_iso": "2026-09-09T10:00:00+00:00", "email": "a@b.test", "name": "Dana Reyes"},
+                   said("a@b.test"))
     outcomes = [e for e in events if e["type"] == "outcome"]
     assert len(outcomes) == 1, "one demo, one outcome, however many times it moves"
 
@@ -223,8 +257,8 @@ def test_rebooking_does_not_announce_a_second_outcome(bound, events):
     """A live run booked once and reported meeting_booked twice, because the idempotent
     path still looked like a success."""
     args = {"slot_iso": "2026-09-01T10:00:00+00:00", "email": "a@b.test", "name": "Dana Reyes"}
-    proxy.run_tool(bound, "book_meeting", args)
-    proxy.run_tool(bound, "book_meeting", args)
+    proxy.run_tool(bound, "book_meeting", args, said("a@b.test"))
+    proxy.run_tool(bound, "book_meeting", args, said("a@b.test"))
     assert [e["data"]["kind"] for e in events if e["type"] == "outcome"] == ["meeting_booked"]
 
 

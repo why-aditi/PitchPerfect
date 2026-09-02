@@ -113,6 +113,11 @@ def run_tool(sid: str, name: str, args: dict, history: list[dict] | None = None)
     except Exception as exc:  # noqa: BLE001 — a bad tool call is the model's problem to recover from
         print(f"[proxy] tool {name} failed: {exc!r}")
         result = {"error": type(exc).__name__, "detail": str(exc)}
+    # Also to the log, not only to RTM: RTM is live-only, so once a call ends the one
+    # record of what the model actually did is gone, and "it said it would book but
+    # nothing was booked" becomes unanswerable after the fact.
+    print(f"[tool] {sid} {name}({json.dumps(args, default=str)[:300]}) -> "
+          f"{_summarise(name, result)}")
     rtm.publish(sid, "tool_call", {"name": name, "args": args,
                                    "result_summary": _summarise(name, result)})
     return result
@@ -146,6 +151,14 @@ def _dispatch(sid: str, name: str, args: dict, history: list[dict]) -> dict:
         return tools.check_slots(secrets, **args)
 
     if name == "book_meeting":
+        # The address is checked against what was actually said, not just against the shape
+        # of the string: a live call invented adam@example.com for a prospect who had given
+        # her own, and only Cal.com refusing the domain stopped a stranger being emailed.
+        heard = tools.clean_email(args.get("email") or "")
+        if heard and not tools.was_actually_said(heard, history):
+            return {"error": "email_not_heard",
+                    "instruction": "You have not heard that address on this call. Ask for "
+                                   "their email and book with exactly what they say."}
         result = tools.book_meeting(secrets, session_id=sid, **args)
         # One demo is one outcome and one deal, however many times it is agreed or moved.
         # already_booked is the idempotent repeat; rescheduled_from is the prospect moving
