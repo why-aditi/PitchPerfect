@@ -107,7 +107,7 @@ async def main():
     booked_iso = [e["data"]["detail"]["slot_iso"] for e in events
                   if e["type"] == "outcome" and e["data"]["kind"] == "meeting_booked"][0]
     again = proxy.run_tool(SID, "book_meeting",
-                           {"slot_iso": booked_iso, "email": "ops@acme.test", "name": "Acme"})
+                           {"slot_iso": booked_iso, "email": "ops@acme.test", "name": "Acme"}, history)
     assert again.get("already_booked") and again["slot_iso"] == booked_iso, again
 
     # A different slot is not a second meeting either — it is the same one, moved. Refusing
@@ -121,7 +121,8 @@ async def main():
     from .tools import calendar as _cal
     _cal._booked[SID]["booked_at"] -= _cal.SETTLE_S + 1
     moved = proxy.run_tool(SID, "book_meeting",
-                           {"slot_iso": "2026-09-02T10:00:00+00:00", "email": "ops@acme.test", "name": "Acme"})
+                           {"slot_iso": "2026-09-02T10:00:00+00:00", "email": "ops@acme.test", "name": "Acme"},
+                           history)
     assert moved["slot_iso"].startswith("2026-09-02"), moved
     assert moved["rescheduled_from"] == booked_iso, moved
     assert moved["booking_id"] == again["booking_id"], "moving must not open a second booking"
