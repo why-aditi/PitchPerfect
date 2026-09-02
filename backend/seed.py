@@ -34,16 +34,18 @@ def demo_config() -> AgentConfig:
     )
 
 
-async def seed_calendar() -> list[str]:
-    """Optionally move a Cal.com credential from the environment onto the demo agent.
+async def seed_secrets() -> list[str]:
+    """Optionally move integration credentials from the environment onto the demo agent.
 
     Credentials live in the database per agent (PRD 17) and are read from nowhere else at
-    call time — this only puts them there, so a fresh clone books a real meeting without
-    hand-pasting into the console first. Whatever is already stored is kept: env fills in
-    the fields it names and nothing else, so re-seeding never wipes a console edit.
+    call time — this only puts them there, so a fresh clone books a real meeting and writes
+    a real deal without hand-pasting into the console first. Whatever is already stored is
+    kept: env fills in the fields it names and nothing else, so re-seeding never wipes a
+    console edit.
     """
     incoming = {"calcom_api_key": os.getenv("CAL_API_KEY"),
-                "calcom_event_type_id": os.getenv("CAL_EVENT_TYPE_ID")}
+                "calcom_event_type_id": os.getenv("CAL_EVENT_TYPE_ID"),
+                "hubspot_token": os.getenv("HUBSPOT_TOKEN")}
     filled = {k: v for k, v in incoming.items() if v}
     if not filled:
         return []
@@ -56,13 +58,14 @@ async def main() -> None:
     config = demo_config()
     await db.save_agent(DEMO_ID, "Vantage demo", config,
                         ["http://localhost:3000", "http://localhost:3001"])
-    calendar = await seed_calendar()
+    secrets = await seed_secrets()
     agent = await db.get_agent(DEMO_ID)
     print(f"seeded {DEMO_ID}: {len(agent['config'].knowledge.tiers)} tiers, "
           f"{len(agent['config'].knowledge.battlecards)} battlecards, "
           f"origins {agent['allowed_origins']}")
-    print(f"calendar: {', '.join(calendar)} from env" if calendar else
-          "calendar: nothing in env; set CAL_API_KEY and CAL_EVENT_TYPE_ID, or use the console")
+    print(f"secrets: {', '.join(secrets)} from env" if secrets else
+          "secrets: nothing in env; set CAL_API_KEY, CAL_EVENT_TYPE_ID and HUBSPOT_TOKEN, "
+          "or paste them in the console")
     await db.close()
 
 
