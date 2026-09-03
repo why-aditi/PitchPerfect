@@ -258,6 +258,8 @@ export default function AgentEditor({ params }: { params: Promise<{ id: string }
           )}
           {tab === "Knowledge" && (
             <KnowledgeTab
+              id={id}
+              isNew={isNew}
               knowledge={config.knowledge}
               onChange={(patch: Partial<Knowledge>) => patchConfig("knowledge", patch)}
             />

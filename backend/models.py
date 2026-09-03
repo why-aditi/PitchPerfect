@@ -140,8 +140,15 @@ class AgentSecrets(BaseModel):
     hubspot_pipeline: str = "default"
     hubspot_deal_stage: str = "appointmentscheduled"
     slack_webhook_url: str | None = None
+    notion_token: str | None = None
+    # Database ids as they appear in a Notion URL. The write actually needs the data
+    # source inside the database; tools/notion.py resolves that, so an operator never
+    # has to find an id that no page in the Notion UI shows them.
+    notion_leads_db: str | None = None
+    notion_pricing_db: str | None = None
 
-    SECRET_FIELDS: ClassVar[tuple[str, ...]] = ("calcom_api_key", "hubspot_token", "slack_webhook_url")
+    SECRET_FIELDS: ClassVar[tuple[str, ...]] = ("calcom_api_key", "hubspot_token",
+                                                "slack_webhook_url", "notion_token")
 
     def masked(self) -> dict:
         out = self.model_dump()

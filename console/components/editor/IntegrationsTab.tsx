@@ -31,7 +31,7 @@ const TOOLS: {
   {
     key: "crm",
     label: "HubSpot contact and deal",
-    hint: "Off: the lead is still captured on the call record, but nothing is written to the CRM.",
+    hint: "Off: the lead is still captured on the call record, but nothing is written to HubSpot or the Notion leads database.",
   },
   {
     key: "escalation",
@@ -207,6 +207,47 @@ export function IntegrationsTab({
               />
             </Field>
           </div>
+        </Card>
+
+        <Card className="space-y-5 p-4">
+          <p className="font-display text-base font-semibold text-ink">Notion</p>
+          <SecretField
+            label="Internal integration token"
+            hint="Optional. Mirrors the lead into Notion alongside HubSpot, and is what the Knowledge tab reads pricing from."
+            placeholder="ntn_…"
+            stored={stored("notion_token")}
+            draft={draft.notion_token}
+            onDraft={(v) => onDraft("notion_token", v)}
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Leads database id"
+              hint="One row per call, updated as the lead develops. Blank writes nothing."
+            >
+              <Input
+                value={plain("notion_leads_db")}
+                onChange={(e) => onDraft("notion_leads_db", e.target.value)}
+                placeholder="from the database URL"
+                className="font-mono"
+              />
+            </Field>
+            <Field
+              label="Pricing database id"
+              hint="Read on demand from the Knowledge tab. Never read during a call."
+            >
+              <Input
+                value={plain("notion_pricing_db")}
+                onChange={(e) => onDraft("notion_pricing_db", e.target.value)}
+                placeholder="from the database URL"
+                className="font-mono"
+              />
+            </Field>
+          </div>
+          <Hint>
+            Notion shows a database to an integration only once it has been shared with it —
+            the token alone is not access. Columns are matched by name, so a database missing
+            one loses that field rather than the whole row.
+          </Hint>
         </Card>
 
         <Card className="space-y-5 p-4">

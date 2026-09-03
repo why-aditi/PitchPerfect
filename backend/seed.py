@@ -45,7 +45,10 @@ async def seed_secrets() -> list[str]:
     """
     incoming = {"calcom_api_key": os.getenv("CAL_API_KEY"),
                 "calcom_event_type_id": os.getenv("CAL_EVENT_TYPE_ID"),
-                "hubspot_token": os.getenv("HUBSPOT_TOKEN")}
+                "hubspot_token": os.getenv("HUBSPOT_TOKEN"),
+                "notion_token": os.getenv("NOTION_TOKEN"),
+                "notion_leads_db": os.getenv("NOTION_LEADS_DB"),
+                "notion_pricing_db": os.getenv("NOTION_PRICING_DB")}
     filled = {k: v for k, v in incoming.items() if v}
     if not filled:
         return []

@@ -152,8 +152,9 @@ async def stop_call(req: StopCall):
              _outcome(final) if final else None)
 
     if final and bound:
-        _, _, agent_secrets = bound
-        tools.sync_contact(agent_secrets, final, force=True)
+        _, agent_config, agent_secrets = bound
+        if agent_config.tools_enabled.crm:
+            tools.sync_contact(agent_secrets, final, force=True)
     if db.DATABASE_URL and final:
         await db.end_call(req.session_id, duration, _outcome(final), final)
 

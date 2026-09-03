@@ -1,11 +1,17 @@
-"""HubSpot CRM, credentials per agent. Fire-and-forget after the reply is sent — a CRM
+"""CRM writes, credentials per agent. Fire-and-forget after the reply is sent — a CRM
 failure must never break a live call, so every error here is logged and swallowed.
+
+HubSpot is the CRM; Notion is an optional mirror of the same two writes, for a team
+whose pipeline lives there instead. Both destinations hang off these two functions so
+the call sites in proxy.py and main.py stay single writes with one debounce between
+them, and either destination being unconfigured is a no-op rather than a branch.
 """
 import time
 
 import httpx
 
 from ..models import AgentSecrets
+from . import notion
 
 API = "https://api.hubapi.com/crm/objects/2026-03"
 DEBOUNCE_S = 10
@@ -49,25 +55,32 @@ def sync_contact(secrets: AgentSecrets, lead: dict, force: bool = False) -> None
     if not email:
         print(f"[crm] {sid}: no email yet, holding {lead['qualification']} lead in memory")
         return
-    if not secrets.hubspot_token:
-        print(f"[crm] would upsert {email}: {lead.get('company')} / {lead.get('seat_count')} seats")
-        return
 
-    props = {k: v for k, v in _properties(lead).items() if v}
-    _post(secrets, "contacts/batch/upsert",
-          {"inputs": [{"id": email, "idProperty": "email", "properties": props}]})
+    if secrets.hubspot_token:
+        props = {k: v for k, v in _properties(lead).items() if v}
+        _post(secrets, "contacts/batch/upsert",
+              {"inputs": [{"id": email, "idProperty": "email", "properties": props}]})
+    else:
+        print(f"[crm] would upsert {email}: {lead.get('company')} / {lead.get('seat_count')} seats")
+
+    # Notion keys its row on the session, not the email, so it could write before one
+    # arrives — but a row per call with no way to contact anybody is landfill in someone
+    # else's workspace. Same gate as HubSpot: no email, no write.
+    notion.upsert_lead(secrets, lead)
 
 
 def create_deal(secrets: AgentSecrets, lead: dict, booking: dict) -> None:
     who = lead.get("company") or booking.get("email")
     name = f"{who} — {lead.get('seat_count') or '?'} seats"
-    if not secrets.hubspot_token:
+    if secrets.hubspot_token:
+        _post(secrets, "deals", {"properties": {
+            "dealname": name,
+            "pipeline": secrets.hubspot_pipeline,
+            "dealstage": secrets.hubspot_deal_stage,
+            "description": (f"Demo booked for {booking.get('slot_iso')} via PitchPilot "
+                            f"({lead['session_id']})"),
+        }})
+    else:
         print(f"[crm] would create deal: {name} ({booking.get('booking_id')})")
-        return
-    _post(secrets, "deals", {"properties": {
-        "dealname": name,
-        "pipeline": secrets.hubspot_pipeline,
-        "dealstage": secrets.hubspot_deal_stage,
-        "description": (f"Demo booked for {booking.get('slot_iso')} via PitchPilot "
-                        f"({lead['session_id']})"),
-    }})
+
+    notion.log_booking(secrets, lead, booking)
