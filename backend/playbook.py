@@ -79,7 +79,7 @@ def compact_state(state: dict) -> str:
 
 
 def build(config: AgentConfig, state: dict, history: list[dict],
-          keep_turns: int = 8) -> list[dict]:
+          keep_turns: int = 8, tz_name: str | None = None) -> list[dict]:
     """Stable prompt, then the volatile block, then the last N turns.
 
     The split is the whole point, and it is about cost rather than wording. Groq caches
@@ -93,6 +93,14 @@ def build(config: AgentConfig, state: dict, history: list[dict],
     against the ISO slots check_slots returns, and reads the timestamp aloud instead.
     """
     now = datetime.now(timezone.utc).strftime("%A %d %B %Y, %H:%M UTC")
+    # UTC alone made the model reason about "tomorrow" in the wrong day: a live call at
+    # 17:33 in Kolkata asked for slots today, got an empty list back because the UTC day
+    # was nearly over, and burned a turn on it. Their own clock goes in the volatile block
+    # beside ours, which is not part of the cached prefix, so it costs nothing to cache.
+    if tz_name:
+        from .tools.calendar import resolve_tz   # local: calendar imports models, not this
+        local = datetime.now(resolve_tz(tz_name)).strftime("%A %d %B, %H:%M")
+        now += f", and {local} where the prospect is ({tz_name})"
     recent = history[-keep_turns * 2:]
     older = history[:-keep_turns * 2]
 

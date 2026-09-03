@@ -17,10 +17,20 @@ export type Battlecard = {
   proof_point: string;
 };
 
+/** One rung of the ladder. `require` is what has to come back; a rung without one is a
+ *  discount with extra steps, which is the thing this whole mechanism exists to prevent. */
+export type Concession = {
+  give: string;
+  require: string;
+  min_seats: number;
+};
+
 export type Knowledge = {
   currency: string;
   tiers: Tier[];
   battlecards: Record<string, Battlecard>;
+  /** Ordered, cheapest first. The order is the offering order. */
+  concessions: Concession[];
 };
 
 export type Persona = {
@@ -51,6 +61,7 @@ export type ToolsEnabled = {
   calendar: boolean;
   crm: boolean;
   escalation: boolean;
+  negotiation: boolean;
 };
 
 export type AgentConfig = {
@@ -101,6 +112,9 @@ export type LeadState = {
   timeline: "now" | "this_quarter" | "exploring" | null;
   objections_raised: string[];
   competitor_mentions: string[];
+  /** What this call actually committed to, in the order it was given. Written by the
+   *  dispatcher from propose_concession results, never by the model. */
+  concessions_offered: string[];
   bant: { budget: number; authority: number; need: number; timeline: number };
   qualification: "cold" | "warm" | "hot";
   next_action: "book_demo" | "send_followup" | "escalate" | null;

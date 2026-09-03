@@ -21,7 +21,13 @@ const BLANK: AgentConfig = {
       "Hi, you're speaking with an AI sales assistant. This call is transcribed. What can I help you with?",
     goal_hierarchy: ["book a demo", "qualify with BANT", "create a follow-up", "escalate to a human"],
     objection_strategies: {
-      pricing: "Reframe to per-seat value, probe the actual budget, offer a pilot. Never discount unprompted.",
+      // Byte-identical to DEFAULT_STRATEGIES["pricing"] in backend/models.py, where the
+      // reasoning for the wording lives. Both are starting points an operator then edits,
+      // so they only have to agree at the moment an agent is created — but when they
+      // disagree, a console-made agent and a seeded one negotiate differently and nothing
+      // reports it.
+      pricing:
+        "Anchor on per-seat value before any total. Probe the real budget and the real blocker — it is usually the annual number, not the rate. Concede only in trades, never in gifts: name what you need back before you give anything, and give one thing at a time. If they push a third time, hold the line and offer a human rather than a better price. Never discount unprompted.",
       trust: "Offer a relevant proof point, a small pilot, or a human rep.",
       product: "Answer from tool data only. If the capability does not exist, say so plainly and pivot to what does.",
       competitor: "Call get_battlecard first, acknowledge one genuine strength, then position.",
@@ -41,8 +47,17 @@ const BLANK: AgentConfig = {
     interruption_enabled: true,
     filler_phrases: ["One moment.", "Let me check that.", "Pulling that up."],
   },
-  knowledge: { currency: "USD", tiers: [], battlecards: {} },
-  tools_enabled: { pricing: true, battlecards: true, calendar: true, crm: true, escalation: true },
+  // A new agent starts with an empty ladder on purpose: nothing has been authorised yet,
+  // so it can hold a price but has nothing to trade until an operator fills the tab in.
+  knowledge: { currency: "USD", tiers: [], battlecards: {}, concessions: [] },
+  tools_enabled: {
+    pricing: true,
+    battlecards: true,
+    calendar: true,
+    crm: true,
+    escalation: true,
+    negotiation: true,
+  },
   llm_model: "openai/gpt-oss-20b",
 };
 

@@ -18,7 +18,7 @@ events: list[dict] = []
 # update_lead_state is not offered to the speaking model any more: extract.py fills the
 # lead state beside the reply. The script still emits it, because the dispatch accepts it
 # from anywhere and the merge rules it exercises are the point of the scenario.
-EXPECT_TOOLS = ["get_pricing", "get_battlecard",
+EXPECT_TOOLS = ["get_pricing", "get_battlecard", "propose_concession",
                 "check_slots", "book_meeting", "cancel_meeting", "escalate_to_human"]
 
 
@@ -38,9 +38,19 @@ SCRIPT = [
     # 3. "Actually it'd be closer to 200 users."
     [_call("update_lead_state", seat_count=200, bant={"authority": 2}), _call("get_pricing", seats=200)],
     "At two hundred seats you move to Enterprise, thirty-two dollars a seat.",
-    # 4. "That's a lot more than we budgeted."
-    [_call("update_lead_state", objections_raised=["pricing"], budget_signal="over_budget")],
-    "Per seat it is actually lower than the Growth rate. Would a paid pilot on one team help?",
+    # 4. "That's a lot more than we budgeted." The agent reframes and then trades — the
+    # pilot it offers is the one the config authorises, not one it made up. Before the
+    # ladder existed this line invented a pilot nobody had defined.
+    [_call("update_lead_state", objections_raised=["pricing"], budget_signal="over_budget"),
+     _call("propose_concession", seats=200)],
+    "Per seat it is actually lower than the Growth rate. What I can do is a thirty-day "
+    "pilot on one team, at no charge — if you can get me your ops lead in the room and a "
+    "date you want to decide by.",
+    # 4b. They push again. A second push gets the next rung, not the same one louder, and
+    # not a discount.
+    [_call("propose_concession", seats=200)],
+    "I can also include onboarding and data migration, which we normally charge for, if "
+    "you commit to the seat count for twelve months.",
     # 5. "Can we see an enterprise demo?"
     [_call("check_slots", days_ahead=5)],
     "I have Tuesday at ten or Wednesday at three UTC.",
@@ -87,6 +97,9 @@ async def _scenario():
     history = []
     for prompt in ["Price for about 20 users?", "How does that compare to Northbeam?",
                    "Actually it'd be closer to 200 users.", "That's a lot more than we budgeted.",
+                   # The second push. One objection proves the agent has something to say;
+                   # two prove it does not say the same thing twice and does not fold.
+                   "Come on, can you do better than that on price?",
                    "Can we see an enterprise demo?", "Tuesday at ten, ops@acme.test."]:
         history.append({"role": "user", "content": prompt})
         said = await proxy.respond(SID, history)
@@ -113,6 +126,17 @@ async def _scenario():
     assert lead["bant"] == {"budget": 2, "authority": 2, "need": 3, "timeline": 3}, lead["bant"]
     assert lead["qualification"] == "hot", lead["qualification"]
     assert lead["next_action"] == "book_demo", lead["next_action"]
+
+    # Step 4 is the negotiation gate: two pushes, two different things given, each with
+    # its ask attached — and nothing given that the config did not authorise.
+    traded = [e["data"]["result_summary"] for e in events
+              if e["type"] == "tool_call" and e["data"]["name"] == "propose_concession"]
+    assert len(traded) == 2 and traded[0] != traded[1], traded
+    assert all("←" in t for t in traded), "a concession without an ask is a discount"
+    assert lead["concessions_offered"] == [
+        "a thirty-day pilot on one team, at no charge",
+        "onboarding and data migration included, which we normally charge for",
+    ], lead["concessions_offered"]
 
     assert called.count("get_battlecard") == 1 and called.count("check_slots") == 1
     assert "book_meeting" in called

@@ -10,6 +10,7 @@ from .models import AgentConfig, AgentSecrets
 
 _bound: dict[str, tuple[str, AgentConfig, AgentSecrets]] = {}
 _engine: dict[str, str] = {}   # session_id -> the engine's own agent id, for speak/leave
+_timezone: dict[str, str] = {}  # session_id -> the prospect's IANA zone, from their browser
 
 
 async def load(agent_id: str) -> tuple[AgentConfig, AgentSecrets] | None:
@@ -29,6 +30,12 @@ async def bind(session_id: str, agent_id: str) -> tuple[AgentConfig, AgentSecret
     return loaded
 
 
+def bind_record(session_id: str, agent_id: str, config: AgentConfig,
+                secrets: AgentSecrets) -> None:
+    """Pin a record the caller has already read. bind() re-reads; /start-call must not."""
+    _bound[session_id] = (agent_id, config, secrets)
+
+
 def for_session(session_id: str) -> tuple[str, AgentConfig, AgentSecrets] | None:
     return _bound.get(session_id)
 
@@ -39,6 +46,16 @@ def set_engine_agent(session_id: str, engine_agent_id: str) -> None:
 
 def engine_agent(session_id: str) -> str | None:
     return _engine.get(session_id)
+
+
+def set_timezone(session_id: str, name: str | None) -> None:
+    """The prospect's own zone, as the browser reports it at /start-call."""
+    if name:
+        _timezone[session_id] = name
+
+
+def timezone_for(session_id: str) -> str | None:
+    return _timezone.get(session_id)
 
 
 def sessions_for(agent_id: str) -> list[str]:

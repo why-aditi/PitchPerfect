@@ -34,6 +34,11 @@ const TOOLS: {
     hint: "Off: the lead is still captured on the call record, but nothing is written to HubSpot or the Notion leads database.",
   },
   {
+    key: "negotiation",
+    label: "Concession ladder",
+    hint: "Off: a price objection gets a reframe and nothing else — the agent can hold the line but has nothing to trade, so a prospect who pushes twice hears the same answer twice. On: it offers one authorised rung at a time from the Knowledge tab, each with what it needs back, and escalates when the ladder runs out. It never discounts either way.",
+  },
+  {
     key: "escalation",
     label: "Escalate to a human",
     hint: "Off: “get me a real person” is answered with a follow-up promise instead of a Slack ping and a rep joining the channel.",

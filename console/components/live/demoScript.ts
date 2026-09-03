@@ -24,6 +24,7 @@ const BASE: LeadState = {
   seat_count: null,
   budget_signal: null,
   timeline: null,
+  concessions_offered: [],
   objections_raised: [],
   competitor_mentions: [],
   bant: { budget: 0, authority: 0, need: 0, timeline: 0 },

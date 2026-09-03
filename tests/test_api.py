@@ -5,7 +5,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from backend import agents, console, main, proxy, rtm, state
+from backend import agents, console, main, playbook, proxy, rtm, state, tools
 
 LOCAL = {"Origin": "http://localhost:3000"}
 
@@ -15,17 +15,26 @@ def stub_agent_lookup(monkeypatch, config, secrets):
     """The HTTP surface is tested without a database. Production no longer falls back to
     the seed when DATABASE_URL is unset — a misconfigured deployment must fail rather than
     quietly serve the demo agent — so the lookup is stubbed here instead."""
-    from backend import agents
+    from backend import agents, db
     from backend.seed import demo_config
+
+    ORIGINS = ["http://localhost:3000", "http://localhost:3001"]
 
     async def load(agent_id):
         return (demo_config(), secrets) if agent_id == "ag_demo" else None
 
     async def allowed(agent_id):
-        return ["http://localhost:3000", "http://localhost:3001"] if agent_id == "ag_demo" else []
+        return ORIGINS if agent_id == "ag_demo" else []
+
+    # /start-call reads config, origins and secrets in one query now, so this is the
+    # lookup the live path actually makes; load() stays stubbed for the keyless fallback
+    # and for /agents/{id}/pricing.
+    async def runtime(agent_id):
+        return (demo_config(), secrets, ORIGINS) if agent_id == "ag_demo" else None
 
     monkeypatch.setattr(agents, "load", load)
     monkeypatch.setattr(main, "_allowed_origins", allowed)
+    monkeypatch.setattr(db, "get_runtime", runtime)
 
 
 @pytest.fixture
@@ -356,3 +365,47 @@ def test_the_agent_and_the_prospect_get_their_own_tokens(client, monkeypatch):
     assert body["rtc_token"] == "007tok-1002", "the widget joins as the prospect uid"
     assert body["uid"] == "1002"
     assert body["rtc_token"] != joined["token"]
+
+
+# --- the prospect's timezone ------------------------------------------------------------
+
+def test_the_browsers_timezone_reaches_the_slot_lookup_without_being_asked(bound, monkeypatch):
+    """A live call read "Friday at 3:30am" aloud to a prospect in India, because check_slots
+    ran in UTC until somebody spent a turn saying otherwise. The browser knew all along."""
+    agents.set_timezone(bound, "Asia/Kolkata")
+    seen = {}
+    monkeypatch.setattr(tools, "check_slots",
+                        lambda secrets, **kw: seen.update(kw) or {"slots": []})
+
+    proxy.run_tool(bound, "check_slots", {"days_ahead": 1})
+    assert seen["timezone_name"] == "Asia/Kolkata"
+
+
+def test_a_timezone_the_model_supplies_beats_the_browsers(bound, monkeypatch):
+    """The prospect can say they are travelling; the browser cannot know that."""
+    agents.set_timezone(bound, "Asia/Kolkata")
+    seen = {}
+    monkeypatch.setattr(tools, "check_slots",
+                        lambda secrets, **kw: seen.update(kw) or {"slots": []})
+
+    proxy.run_tool(bound, "check_slots", {"days_ahead": 1, "timezone_name": "Europe/Berlin"})
+    assert seen["timezone_name"] == "Europe/Berlin"
+
+
+def test_a_call_with_no_timezone_behaves_exactly_as_before(bound, monkeypatch):
+    """Nothing is trusted from the browser beyond naming a zone, and a call that sends
+    none must not start passing None down into the tool."""
+    seen = {}
+    monkeypatch.setattr(tools, "check_slots",
+                        lambda secrets, **kw: seen.update(kw) or {"slots": []})
+
+    proxy.run_tool(bound, "check_slots", {"days_ahead": 1})
+    assert "timezone_name" not in seen
+
+
+def test_the_prompt_carries_the_prospects_own_clock(config):
+    """UTC alone had the model reasoning about "tomorrow" in the wrong day."""
+    built = playbook.build(config, state.get("sess_tz"), [], tz_name="Asia/Kolkata")
+    volatile = built[1]["content"]
+    assert "Asia/Kolkata" in volatile and "where the prospect is" in volatile
+    assert "UTC" in volatile, "our own clock still has to be there for the ISO slots"

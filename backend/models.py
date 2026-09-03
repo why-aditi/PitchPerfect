@@ -11,7 +11,22 @@ from pydantic import BaseModel, Field
 Objection = Literal["pricing", "trust", "product", "competitor"]
 
 DEFAULT_STRATEGIES: dict[str, str] = {
-    "pricing": "Reframe to per-seat value, probe the actual budget, offer a pilot. "
+    # Trade-shaped rather than defensive. "Reframe, probe, offer a pilot" left the agent
+    # with nothing to do on a second push but repeat itself, and the models this runs on
+    # have a documented accommodation reflex — they concede quickly and give things away
+    # for nothing in return. Naming what comes back before anything goes out is the whole
+    # difference between negotiating and caving, and the third-push rule gives it
+    # somewhere to go that is not a discount. The last sentence is unchanged and
+    # load-bearing: propose_concession is what may move terms, never the model's own words.
+    #
+    # Byte-identical in console/app/agents/[id]/page.tsx. A new agent starts from the
+    # console's copy and a seeded one from here, so editing one and not the other makes
+    # two agents differ by an oversight rather than by anyone's decision.
+    "pricing": "Anchor on per-seat value before any total. Probe the real budget and the "
+               "real blocker — it is usually the annual number, not the rate. Concede only "
+               "in trades, never in gifts: name what you need back before you give "
+               "anything, and give one thing at a time. If they push a third time, hold "
+               "the line and offer a human rather than a better price. "
                "Never discount unprompted.",
     "trust": "Offer a relevant proof point, a small pilot, or a human rep.",
     "product": "Answer from tool data only. If the capability does not exist, say so "
@@ -36,10 +51,34 @@ class Battlecard(BaseModel):
     proof_point: str = ""
 
 
+class Concession(BaseModel):
+    """One rung of the negotiation ladder: what may be given, and what has to come back.
+
+    `require` is not decoration. A concession with nothing asked in return is a discount
+    with extra steps, and the whole reason this is config rather than prose is that the
+    trade has to be decided by a person in advance, not improvised mid-call by a model
+    that wants the conversation to go well.
+
+    Deliberately not a price. The only number that may move is the volume_break already
+    published on a Tier, which every prospect gets whether they push or not. Everything
+    here is a term — pilot, onboarding, support, payment schedule — so the worst case of
+    a wrongly-offered rung is an operational cost somebody agreed to beforehand, not
+    margin given away on a call nobody reviewed.
+    """
+    give: str
+    require: str
+    # Some rungs only make sense at scale — included onboarding on a ten-seat deal costs
+    # more than the deal. Rungs the seat count rules out are skipped, not refused.
+    min_seats: int = 1
+
+
 class Knowledge(BaseModel):
     currency: str = "USD"
     tiers: list[Tier] = []
     battlecards: dict[str, Battlecard] = {}
+    # Ordered: cheapest first. The list *is* the ladder — propose_concession walks it and
+    # never reorders, so an operator changes what gets offered first by moving a row.
+    concessions: list[Concession] = []
 
 
 class Persona(BaseModel):
@@ -107,6 +146,9 @@ class ToolsEnabled(BaseModel):
     calendar: bool = True
     crm: bool = True
     escalation: bool = True
+    # Off leaves the agent able to reframe a price objection but with nothing to trade,
+    # which is the behaviour it had before the ladder existed.
+    negotiation: bool = True
 
 
 class AgentConfig(BaseModel):

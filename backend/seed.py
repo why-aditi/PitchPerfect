@@ -12,7 +12,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from . import db  # noqa: E402
-from .models import AgentConfig, Battlecard, Knowledge, Persona, Tier  # noqa: E402
+from .models import (AgentConfig, Battlecard, Concession, Knowledge, Persona,  # noqa: E402
+                     Tier)
 
 DEMO_ID = "ag_demo"
 DATA = Path(__file__).parent / "data"
@@ -30,6 +31,7 @@ def demo_config() -> AgentConfig:
             currency=pricing["currency"],
             tiers=[Tier(**t) for t in pricing["tiers"]],
             battlecards={k: Battlecard(**v) for k, v in cards.items()},
+            concessions=[Concession(**c) for c in pricing.get("concessions", [])],
         ),
     )
 
@@ -65,6 +67,7 @@ async def main() -> None:
     agent = await db.get_agent(DEMO_ID)
     print(f"seeded {DEMO_ID}: {len(agent['config'].knowledge.tiers)} tiers, "
           f"{len(agent['config'].knowledge.battlecards)} battlecards, "
+          f"{len(agent['config'].knowledge.concessions)} concessions, "
           f"origins {agent['allowed_origins']}")
     print(f"secrets: {', '.join(secrets)} from env" if secrets else
           "secrets: nothing in env; set CAL_API_KEY, CAL_EVENT_TYPE_ID and HUBSPOT_TOKEN, "

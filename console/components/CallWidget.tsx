@@ -51,10 +51,15 @@ export default function CallWidget({
         <button
           onClick={begin}
           disabled={asking}
+          // Ink, not brand. This button is the only part of the product that renders on
+          // someone else's page, and the console's blue is the console's, not theirs — on
+          // the Vantage demo it read as a stray indigo pill on a cream and green site.
+          // Near-black sits on any host palette without competing with it, which is the
+          // one thing a launcher we cannot design around has to do.
           className={cx(
-            "flex items-center gap-2 rounded-full bg-brand px-5 py-3 text-sm font-medium text-white",
-            "shadow-float transition-colors hover:bg-brand/90",
-            "disabled:cursor-progress disabled:bg-brand-dim disabled:text-white/80",
+            "flex items-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-medium text-white",
+            "shadow-float transition-colors hover:bg-ink/90",
+            "disabled:cursor-progress disabled:bg-ink/40 disabled:text-white/80",
           )}
         >
           <MicGlyph />

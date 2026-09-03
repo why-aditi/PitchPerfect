@@ -26,7 +26,10 @@ async def connect() -> asyncpg.Pool:
         _pool = await asyncpg.create_pool(
             DATABASE_URL, min_size=1, max_size=5,
             statement_cache_size=0 if transaction_pooler else 100)
-        await _pool.execute((Path(__file__).parent / "schema.sql").read_text())
+        # 380 ms, and under --reload it is paid on every edit. The schema is idempotent
+        # and seed.py applies it, so this only has to run where nothing else will.
+        if os.getenv("SKIP_SCHEMA_ON_CONNECT", "").lower() not in ("1", "true", "yes"):
+            await _pool.execute((Path(__file__).parent / "schema.sql").read_text())
     return _pool
 
 
@@ -59,6 +62,28 @@ async def get_agent(agent_id: str) -> dict | None:
             "config": AgentConfig(**json.loads(row["config"])),
             "allowed_origins": list(row["allowed_origins"]),
             "secrets_set": AgentSecrets(**json.loads(row["secrets"])).masked()}
+
+
+async def get_runtime(agent_id: str) -> tuple[AgentConfig, AgentSecrets, list[str]] | None:
+    """Everything /start-call needs, in one round trip. Runtime only — never a console read.
+
+    The call path used to reach Postgres five times for one agent: get_agent for the
+    config, get_agent again for the origins, then get_agent and get_secrets again inside
+    bind. From India to Supabase in Sydney that is 363 ms each, 1.8 s of the six the
+    operator was waiting on. Every one of those queries already selected this same row.
+
+    Kept apart from get_agent rather than folded into it because get_agent's contract is
+    that secrets leave it masked, and the console depends on that. This one is readable
+    by design, so it stays out of the console's reach.
+    """
+    pool = await connect()
+    row = await pool.fetchrow(
+        "SELECT config, allowed_origins, secrets FROM agents WHERE id = $1", agent_id)
+    if row is None:
+        return None
+    return (AgentConfig(**json.loads(row["config"])),
+            AgentSecrets(**json.loads(row["secrets"])),
+            list(row["allowed_origins"]))
 
 
 async def get_secrets(agent_id: str) -> AgentSecrets:

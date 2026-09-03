@@ -2,7 +2,10 @@
 
 _STORE: dict[str, dict] = {}
 
-_ARRAYS = ("objections_raised", "competitor_mentions", "notes")
+# Both halves are required for a field to exist: update() skips any key not already in
+# the state dict, so a field added to _ARRAYS but not to new_state is dropped silently —
+# no error, no log line, just a value that never appears.
+_ARRAYS = ("objections_raised", "competitor_mentions", "notes", "concessions_offered")
 _INTS = ("seat_count",)
 
 
@@ -31,6 +34,10 @@ def new_state(session_id: str) -> dict:
         "timeline": None,
         "objections_raised": [],
         "competitor_mentions": [],
+        # Written by the dispatcher when propose_concession fires, never by the model.
+        # It is the record of what this call actually committed to, so the rep who picks
+        # up an escalation inherits the promises rather than having to ask.
+        "concessions_offered": [],
         "bant": {"budget": 0, "authority": 0, "need": 0, "timeline": 0},
         "qualification": "cold",
         "next_action": None,

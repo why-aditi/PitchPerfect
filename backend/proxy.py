@@ -167,7 +167,8 @@ async def respond(sid: str, history: list[dict], sink=None) -> str:
     value is the whole text either way, so text-mode callers need not care.
     """
     config, secrets = _bound(sid)
-    messages = playbook.build(config, state.get(sid), history)
+    messages = playbook.build(config, state.get(sid), history,
+                              tz_name=agents.timezone_for(sid))
     specs = tools.specs_for(config)
     hops = []
     try:
@@ -230,6 +231,15 @@ def run_tool(sid: str, name: str, args: dict, history: list[dict] | None = None)
 def _dispatch(sid: str, name: str, args: dict, history: list[dict]) -> dict:
     config, secrets = _bound(sid)
 
+    # The prospect's browser already told us their zone at /start-call, so neither the
+    # agent nor the prospect should have to spend a turn on it. Only fills a gap: a zone
+    # the model passes wins, because the prospect can say they are travelling and the
+    # browser cannot know that.
+    if name in ("check_slots", "book_meeting") and not args.get("timezone_name"):
+        known = agents.timezone_for(sid)
+        if known:
+            args = {**args, "timezone_name": known}
+
     # A disabled tool is absent from the specs, so the model should never ask for one.
     # If it does anyway, refusing here keeps the switch meaningful.
     if name not in tools.enabled_names(config) and name != "update_lead_state":
@@ -251,6 +261,21 @@ def _dispatch(sid: str, name: str, args: dict, history: list[dict]) -> dict:
 
     if name == "get_pricing":
         return tools.get_pricing(config, **args)
+
+    if name == "propose_concession":
+        lead = state.get(sid)
+        # Which rungs are already spent is call state, not something the model is asked to
+        # remember — a model tracking its own concessions will offer the same one twice
+        # under pressure, or skip to the best one to end an awkward moment.
+        result = tools.propose_concession(config, lead["concessions_offered"],
+                                          seats=args.get("seats") or lead.get("seat_count"))
+        if "give" in result:
+            # Recorded here rather than by the model, so what the call committed to is
+            # what a tool actually produced. It rides to the CRM and into an escalation
+            # summary with the rest of the lead state.
+            lead = state.update(sid, concessions_offered=[result["give"]])
+            rtm.publish(sid, "lead_state", lead)
+        return result
 
     if name == "get_battlecard":
         return tools.get_battlecard(config, **args)
@@ -349,6 +374,10 @@ def _summarise(name: str, result: dict) -> str:
         return f"{result['tier']}, ${_money(result['per_seat_month'])}/seat"
     if name == "update_lead_state":
         return f"{result.get('seat_count') or '?'} seats, {result.get('qualification')}"
+    # The trade, both halves. A chip reading only "pilot offered" would hide the thing
+    # that makes it a concession rather than a giveaway.
+    if name == "propose_concession" and "give" in result:
+        return f"{result['give']} ← {result['require']}"
     if "error" in result:
         return f"error: {result['error']}"
     return str(result)[:120]

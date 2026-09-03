@@ -9,7 +9,7 @@ def test_new_state_has_every_documented_field():
     assert set(s) == {
         "session_id", "company", "email", "industry", "use_case", "seat_count",
         "budget_signal", "timeline", "objections_raised", "competitor_mentions",
-        "bant", "qualification", "next_action", "notes",
+        "concessions_offered", "bant", "qualification", "next_action", "notes",
     }
     assert s["qualification"] == "cold"
     assert s["bant"] == {"budget": 0, "authority": 0, "need": 0, "timeline": 0}

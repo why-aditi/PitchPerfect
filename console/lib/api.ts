@@ -100,7 +100,18 @@ export const deleteAgent = (id: string) =>
 export const startCall = (agent_id: string, page_context = "pricing", page_origin?: string) =>
   call<Session>("/start-call", {
     method: "POST",
-    body: JSON.stringify({ agent_id, page_context, page_origin }),
+    // The prospect's own timezone, straight off the browser. Without it check_slots ran in
+    // UTC until someone said otherwise, so the agent spent a turn asking and, before that
+    // answer arrived, read UTC slots aloud — one call offered "Friday at 3:30am" to a
+    // prospect in India. resolvedOptions().timeZone is an IANA name every browser has;
+    // the backend resolves it leniently and falls back to UTC, so a wrong or missing one
+    // is exactly as good as not sending it.
+    body: JSON.stringify({
+      agent_id,
+      page_context,
+      page_origin,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    }),
   });
 
 export const stopCall = (session_id: string) =>

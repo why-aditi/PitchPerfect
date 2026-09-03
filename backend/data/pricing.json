@@ -1,6 +1,28 @@
 {
   "currency": "USD",
   "enterprise_seat_threshold": 100,
+  "concessions": [
+    {
+      "give": "a thirty-day pilot on one team, at no charge",
+      "require": "you can get me your ops lead in the room and a date you want to decide by",
+      "min_seats": 1
+    },
+    {
+      "give": "onboarding and data migration included, which we normally charge for",
+      "require": "you commit to the seat count for twelve months",
+      "min_seats": 50
+    },
+    {
+      "give": "annual prepay terms, so it is one invoice instead of twelve",
+      "require": "we can get the paperwork done inside the quarter",
+      "min_seats": 1
+    },
+    {
+      "give": "a dedicated CSM for the first six months, which is normally Enterprise only",
+      "require": "you are willing to be a reference once you are live",
+      "min_seats": 100
+    }
+  ],
   "tiers": [
     {
       "name": "Starter",

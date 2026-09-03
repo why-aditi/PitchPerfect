@@ -104,14 +104,24 @@ export function useCall(mode: CallMode): Call {
     setTranscript([]);
     setState("connecting");
 
+    // Held outside the try so a failure between opening the device and publishing it can
+    // still close it. Without this an overlapped mic outlives a failed join and the
+    // browser keeps showing the recording indicator for a call that never happened.
+    let opening: Promise<IMicrophoneAudioTrack> | null = null;
+
     try {
-      const s =
-        current.kind === "call"
-          ? await startCall(current.agentId, current.pageContext, current.pageOrigin)
-          : await observeChannel(current.agentId, current.channel);
+      // Both are started before either is awaited. The SDK chunk is 1.6 MB and does not
+      // depend on the session, but it used to be imported only after /start-call came
+      // back — so its download sat end to end with a round trip to Sydney and back
+      // instead of underneath it. In dev it is worse than a download: the chunk is
+      // compiled on demand, which is most of why the first press of the day was slow.
+      const sdk = import("agora-rtc-sdk-ng");
+      const s = await (current.kind === "call"
+        ? startCall(current.agentId, current.pageContext, current.pageOrigin)
+        : observeChannel(current.agentId, current.channel));
       setSession(s);
 
-      const AgoraRTC = (await import("agora-rtc-sdk-ng")).default;
+      const AgoraRTC = (await sdk).default;
       AgoraRTC.setLogLevel(3); // warnings and errors only; the SDK is chatty at info
       const c = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
       client.current = c;
@@ -158,15 +168,24 @@ export function useCall(mode: CallMode): Call {
         );
       }, METER_MS);
 
+      // Opening the device does not depend on having joined, so it starts first and is
+      // awaited after. A failure still lands in the catch below, which leaves the channel.
+      const wantsMic = current.kind === "call" || current.mic;
+      opening = wantsMic ? AgoraRTC.createMicrophoneAudioTrack() : null;
+
       await c.join(s.app_id, s.channel, s.rtc_token, Number(s.uid));
 
-      const wantsMic = current.kind === "call" || current.mic;
-      if (wantsMic) {
-        mic.current = await AgoraRTC.createMicrophoneAudioTrack();
+      if (opening) {
+        mic.current = await opening;
+        opening = null;
         await c.publish([mic.current]);
       }
       setState("listening");
     } catch (e) {
+      // Whichever of the two got as far as opening the device has to give it back.
+      opening?.then((t) => t.close()).catch(() => {});
+      mic.current?.close();
+      mic.current = null;
       client.current?.leave().catch(() => {});
       client.current = null;
       setError(message(e));

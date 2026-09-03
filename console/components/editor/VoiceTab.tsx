@@ -11,17 +11,43 @@ import { Group, Hint, JsonField, ListEditor } from "./bits";
  * reference after a live call where the agent talked over the prospect; leaving the old
  * numbers here would badge every new agent CHANGED against a default it never had.
  */
-export const DEFAULTS: Voice = {
-  tts_vendor: "",
-  tts_params: {},
-  speech_threshold: 0.5,
-  interrupt_duration_ms: 160,
-  speaking_interrupt_duration_ms: 320,
+/**
+ * What this tab can reset, and nothing else. Every value tracks models.py — checked
+ * against it, not copied once and left to drift.
+ *
+ * Two bugs lived in the old shape of this constant, and both were live-call failures.
+ *
+ * It carried `tts_vendor: ""` and `tts_params: {}`, and the reset button spread the whole
+ * object — so one click wrote an empty vendor over the agent's voice. models.py types
+ * tts_vendor as a plain str, so "" validates and saves, and agora.py then sends
+ * `tts: {vendor: ""}` and the engine refuses the join. The next call after that click
+ * would simply not start. TTS is not a turn-detection knob and is not edited on this tab,
+ * so it has no business in a turn-detection reset.
+ *
+ * And the numbers had drifted from models.py on five of them, which made a stock agent
+ * render "Reset tab to defaults (5 changed)" — an invitation to click. Restoring those
+ * numbers would have undone the tuning models.py:76-79 records as having cut turns off
+ * "twenty times in thirty".
+ */
+export const DEFAULTS: Pick<
+  Voice,
+  | "speech_threshold"
+  | "interrupt_duration_ms"
+  | "speaking_interrupt_duration_ms"
+  | "prefix_padding_ms"
+  | "silence_duration_ms"
+  | "max_wait_ms"
+  | "interruption_enabled"
+  | "filler_phrases"
+> = {
+  speech_threshold: 0.6,
+  interrupt_duration_ms: 300,
+  speaking_interrupt_duration_ms: 500,
   prefix_padding_ms: 800,
   silence_duration_ms: 700,
-  max_wait_ms: 5000,
+  max_wait_ms: 3000,
   interruption_enabled: true,
-  filler_phrases: ["One moment.", "Let me check that.", "Pulling that up."],
+  filler_phrases: ["Right.", "Let me look.", "Sure."],
 };
 
 type NumericKey =
@@ -149,7 +175,7 @@ export function VoiceTab({
   voice: Voice;
   onChange: (patch: Partial<Voice>) => void;
 }) {
-  const changed = (Object.keys(DEFAULTS) as (keyof Voice)[]).filter(
+  const changed = (Object.keys(DEFAULTS) as (keyof typeof DEFAULTS)[]).filter(
     (k) => JSON.stringify(voice[k]) !== JSON.stringify(DEFAULTS[k]),
   );
 

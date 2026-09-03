@@ -10,11 +10,12 @@ from .calendar import (book_meeting, cancel_meeting, check_slots, clean_email,
                        was_actually_said)
 from .crm import create_deal, sync_contact
 from .escalation import escalate_to_human
+from .negotiation import propose_concession
 from .pricing import get_pricing
 from ..models import AgentConfig
 
 __all__ = ["get_pricing", "get_battlecard", "check_slots", "book_meeting",
-           "cancel_meeting", "escalate_to_human",
+           "cancel_meeting", "escalate_to_human", "propose_concession",
            "sync_contact", "create_deal", "clean_email", "was_actually_said",
            "specs_for", "SPECS", "LEAD_STATE_SPEC"]
 
@@ -27,6 +28,7 @@ GATED_BY = {
     "book_meeting": "calendar",
     "cancel_meeting": "calendar",
     "escalate_to_human": "escalation",
+    "propose_concession": "negotiation",
 }
 
 def _nullable(spec: dict) -> dict:
@@ -66,9 +68,14 @@ SPECS = [_nullable(s) for s in [
      "description": "Real availability, up to 5 slots. Offer two of them, never the list.",
      "parameters": {"type": "object", "properties": {
          "days_ahead": {"type": "integer"},
+         # Their browser's zone is filled in by the dispatcher when this is left out, so
+         # the instruction is no longer "ask": asking cost a turn on every booking, and
+         # before it was asked the agent read UTC slots aloud — a live call offered
+         # "Friday at 3:30am" to a prospect in India. Pass one only to override.
          "timezone_name": {"type": "string",
-                           "description": "Their timezone, however they said it: "
-                                          "'Eastern', 'PST', 'Europe/Berlin'. Ask if unsaid."}}}},
+                           "description": "Only if they say they are somewhere else, "
+                                          "e.g. travelling. Otherwise leave out — their "
+                                          "own timezone is already known."}}}},
     {"name": "book_meeting",
      "description": "Book the demo, or move it if one is already booked. Needs a name AND "
                     "an email — ask for both before calling this.",
@@ -83,6 +90,14 @@ SPECS = [_nullable(s) for s in [
      "description": "Call off the demo booked on THIS call. Cannot touch any other booking.",
      "parameters": {"type": "object", "properties": {
          "reason": {"type": "string", "description": "What they said, briefly."}}}},
+    # One line, like the rest: this block is resent on every request and is the larger
+    # half of the cached prefix. "Never a discount" is in the description rather than left
+    # to the prompt because the description is what the model reads at the moment it
+    # decides whether this tool is the answer to "can you do better on price".
+    {"name": "propose_concession",
+     "description": "The next thing you may trade on a price objection, and what to ask "
+                    "back for it. Never a discount. Call it instead of conceding yourself.",
+     "parameters": {"type": "object", "properties": {"seats": {"type": "integer"}}}},
     {"name": "escalate_to_human", "description": "Hand off to a human rep on this call.",
      "parameters": {"type": "object", "properties": {"reason": {"type": "string"}},
                     "required": ["reason"]}},

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { importTiers } from "@/lib/api";
-import type { Battlecard, Knowledge, Tier } from "@/lib/types";
+import type { Battlecard, Concession, Knowledge, Tier } from "@/lib/types";
 import { Badge, Button, Card, Field, Input, Textarea, Toggle } from "@/components/ui";
 import {
   ErrorNote,
@@ -386,6 +386,81 @@ function BattlecardCard({
   );
 }
 
+/**
+ * One rung. The two fields are deliberately equal in weight on screen: an operator filling
+ * in "give" and leaving "require" empty has written a giveaway, and the layout should make
+ * that look as unfinished as it is.
+ */
+function ConcessionCard({
+  rung,
+  index,
+  onChange,
+  onMove,
+  onRemove,
+}: {
+  rung: Concession;
+  index: number;
+  onChange: (next: Concession) => void;
+  onMove: (by: number) => void;
+  onRemove: () => void;
+}) {
+  const patch = (p: Partial<Concession>) => onChange({ ...rung, ...p });
+
+  return (
+    <Card className="space-y-4 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
+          Rung {index + 1}
+        </span>
+        <span className="flex gap-1">
+          <IconButton label="Move up" onClick={() => onMove(-1)}>
+            ↑
+          </IconButton>
+          <IconButton label="Move down" onClick={() => onMove(1)}>
+            ↓
+          </IconButton>
+          <IconButton label="Remove rung" onClick={onRemove}>
+            <IconTrash />
+          </IconButton>
+        </span>
+      </div>
+
+      <Field label="We give" hint="Said out loud as written, so phrase it the way a rep would.">
+        <Input
+          value={rung.give}
+          onChange={(e) => patch({ give: e.target.value })}
+          placeholder="a thirty-day pilot on one team, at no charge"
+        />
+      </Field>
+
+      <Field
+        label="They give"
+        hint="What has to come back. Without this it is a discount, and the agent will read it as one."
+      >
+        <Input
+          value={rung.require}
+          onChange={(e) => patch({ require: e.target.value })}
+          placeholder="you can get me your ops lead in the room and a decision date"
+        />
+      </Field>
+
+      {!rung.require.trim() && rung.give.trim() && (
+        <Warn>This rung gives something away and asks for nothing back.</Warn>
+      )}
+
+      <Field label="Only above" hint="Seats. Rungs this deal is too small for are skipped, not refused.">
+        <Input
+          type="number"
+          min={1}
+          value={rung.min_seats}
+          onChange={(e) => patch({ min_seats: Number(e.target.value) || 1 })}
+          className="w-28 font-mono"
+        />
+      </Field>
+    </Card>
+  );
+}
+
 /* ---------------------------------------------------------------- tab */
 
 /**
@@ -441,6 +516,8 @@ export function KnowledgeTab({
   onChange: (patch: Partial<Knowledge>) => void;
 }) {
   const { tiers, battlecards, currency } = knowledge;
+  // An agent saved before the ladder existed has no concessions key at all.
+  const concessions = knowledge.concessions ?? [];
   const warnings = coverageWarnings(tiers);
   const entries = Object.entries(battlecards);
 
@@ -538,6 +615,58 @@ export function KnowledgeTab({
             return null;
           }}
         />
+      </Group>
+
+      <Group
+        title="Concession ladder"
+        action={
+          <Button
+            variant="ghost"
+            className="px-3 py-1.5 text-xs"
+            onClick={() =>
+              onChange({ concessions: [...concessions, { give: "", require: "", min_seats: 1 }] })
+            }
+          >
+            <IconPlus />
+            Add rung
+          </Button>
+        }
+      >
+        <Hint>
+          What the agent may trade when someone pushes on price, cheapest first. It offers one
+          rung at a time and never more than it has been given here — when the list runs out it
+          says so and offers a human, rather than inventing a discount. Order matters: the top
+          row is what a prospect gets for pushing once.
+        </Hint>
+
+        {concessions.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-line px-6 py-8 text-center text-sm text-muted">
+            Nothing to trade. A price objection gets a reframe and then the same reframe again.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {concessions.map((rung, i) => (
+              <ConcessionCard
+                key={i}
+                rung={rung}
+                index={i}
+                onChange={(next) =>
+                  onChange({ concessions: concessions.map((c, n) => (n === i ? next : c)) })
+                }
+                onMove={(by) => {
+                  const to = i + by;
+                  if (to < 0 || to >= concessions.length) return;
+                  const next = [...concessions];
+                  [next[i], next[to]] = [next[to], next[i]];
+                  onChange({ concessions: next });
+                }}
+                onRemove={() =>
+                  onChange({ concessions: concessions.filter((_, n) => n !== i) })
+                }
+              />
+            ))}
+          </div>
+        )}
       </Group>
 
       <Group

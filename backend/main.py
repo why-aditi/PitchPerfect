@@ -44,9 +44,23 @@ async def lifespan(_app: FastAPI):
         else:
             log.info("PUBLIC_BASE_URL reaches this instance")
 
+    async def warm():
+        """The first call after a restart paid the pool's TLS handshake and auth to Sydney
+        (~1.2 s) on top of everything else. Nothing depends on this succeeding — a failure
+        here just means the first call pays what it used to."""
+        if not db.DATABASE_URL:
+            return
+        try:
+            await db.connect()
+            log.info("database pool warm")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("could not warm the database pool: %r", exc)
+
     check = asyncio.create_task(startup_check())
+    warming = asyncio.create_task(warm())
     yield
     check.cancel()
+    warming.cancel()
     await db.close()
 
 
@@ -73,6 +87,10 @@ class StartCall(BaseModel):
     # Browser-supplied either way, so this raises the bar on copied snippets rather than
     # authenticating anyone; a signed per-origin token is the real fix if it ever matters.
     page_origin: str | None = None
+    # The prospect's IANA zone, read off their browser. Nothing is trusted from it beyond
+    # naming a zone: resolve_tz falls back to UTC on anything it does not recognise, which
+    # is exactly the behaviour there was before this field existed.
+    timezone: str | None = None
 
 
 class StopCall(BaseModel):
@@ -82,12 +100,22 @@ class StopCall(BaseModel):
 
 @app.post("/start-call")
 async def start_call(req: StartCall, origin: str | None = Header(None)):
-    loaded = await agents.load(req.agent_id)
-    if loaded is None:
-        raise HTTPException(404, "no such agent")
-    config, _ = loaded
+    started_at = time.perf_counter()
+    # One round trip for config, origins and secrets together. This used to be five —
+    # load() for the config, again for the origins, then bind() reading both a third and
+    # fourth time — and at 363 ms each from here to Supabase in Sydney that was 1.8 of the
+    # six seconds between pressing the button and hearing the greeting.
+    record = await db.get_runtime(req.agent_id) if db.DATABASE_URL else None
+    if record is None:
+        loaded = await agents.load(req.agent_id)   # no database configured: the seeded path
+        if loaded is None:
+            raise HTTPException(404, "no such agent")
+        config, agent_secrets = loaded
+        allowed = await _allowed_origins(req.agent_id)
+    else:
+        config, agent_secrets, allowed = record
+    read_at = time.perf_counter()
 
-    allowed = await _allowed_origins(req.agent_id)
     if not agents.allowed_origin(allowed, req.page_origin or origin):
         # Agent ids are public — they sit in the embed snippet — so this is the check that
         # stops a stranger burning the operator's Agora minutes (PRD 6.1).
@@ -100,9 +128,11 @@ async def start_call(req: StartCall, origin: str | None = Header(None)):
         log.error("refusing /start-call: %s", problem)
         raise HTTPException(503, problem)
 
+    checked_at = time.perf_counter()
     session_id = f"sess_{secrets.token_hex(2)}"
     channel = rtm.channel_for(session_id)
-    await agents.bind(session_id, req.agent_id)
+    agents.bind_record(session_id, req.agent_id, config, agent_secrets)
+    agents.set_timezone(session_id, req.timezone)
 
     # A token binds the uid it was minted for, so the agent and the prospect need their
     # own. Handing the engine the prospect's token makes it fail to join with nothing but
@@ -115,14 +145,24 @@ async def start_call(req: StartCall, origin: str | None = Header(None)):
         agora.start_payload(config, session_id, channel, agent_token, llm_url,
                             AGENT_UID, PROSPECT_UID))
 
+    joined_at = time.perf_counter()
     agents.set_engine_agent(session_id, joined["agent_id"])
     state.get(session_id)
-    log.info("[call] %s started: agent=%s engine=%s channel=%s", session_id, req.agent_id,
-             joined["agent_id"], channel)
-    if db.DATABASE_URL:
-        await db.start_call(session_id, req.agent_id, joined["agent_id"])
+    # Per-stage, because the six seconds an operator complained about had to be
+    # reconstructed from outside the process: the log said only that a call had started.
+    log.info("[call] %s started: agent=%s engine=%s channel=%s tz=%s "
+             "(db=%dms selfcheck=%dms agora=%dms total=%dms)", session_id, req.agent_id, joined["agent_id"],
+             channel, req.timezone or "-",
+             (read_at - started_at) * 1000, (checked_at - read_at) * 1000,
+             (joined_at - checked_at) * 1000, (time.perf_counter() - started_at) * 1000)
+    # The engine is already running by the time this row is written and nothing on the
+    # turn path reads it, so the browser should not be kept waiting on a bookkeeping
+    # insert. /stop-call awaits the handle before its own UPDATE, because a call ended
+    # inside the round trip would otherwise update a row that does not exist yet.
+    recording = (asyncio.create_task(db.start_call(session_id, req.agent_id, joined["agent_id"]))
+                 if db.DATABASE_URL else None)
     SESSIONS[session_id] = {"engine_agent_id": joined["agent_id"], "agent_id": req.agent_id,
-                            "channel": channel, "started": time.time()}
+                            "channel": channel, "started": time.time(), "recording": recording}
     return {"app_id": agora.APP_ID, "channel": channel, "rtc_token": prospect_token,
             "uid": PROSPECT_UID,
             "session_id": session_id, "engine_agent_id": joined["agent_id"],
@@ -143,6 +183,15 @@ async def stop_call(req: StopCall):
     except Exception as exc:  # noqa: BLE001
         print(f"[stop-call] leave failed for {req.session_id}: {exc!r}")
     duration = int(time.time() - session["started"])
+    # /start-call writes the call row in the background so the browser is not kept waiting
+    # on it. A call hung up inside that round trip would otherwise have end_call's UPDATE
+    # arrive before the INSERT and silently match no rows.
+    if session.get("recording") is not None:
+        try:
+            await session["recording"]
+        except Exception as exc:  # noqa: BLE001 — bookkeeping must not break the hangup
+            log.warning("[stop-call] call row for %s was never written: %r",
+                        req.session_id, exc)
     # The last turn's facts are still being extracted beside the reply; the CRM sync
     # below must see them. Bounded, so a hung provider cannot hang the hangup.
     await extract.drain(req.session_id)

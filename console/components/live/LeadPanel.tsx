@@ -81,6 +81,12 @@ export function LeadPanel({
           flash={flash("competitor_mentions")}
           version={version}
         />
+        {/* Not a ChipRow. Every other item in this panel is a word — "pricing",
+            "Northbeam" — and these are sentences, so pills read as a wall. Numbered and
+            stacked because the order is the point: a rep reading this needs to see the
+            ladder being climbed, and which rung the call stopped on. */}
+        <Conceded items={lead.concessions_offered} flash={flash("concessions_offered")}
+                  version={version} />
       </Group>
 
       <Group title="Qualification">
@@ -188,6 +194,46 @@ function Row({
   );
 }
 
+/**
+ * What the call has committed to, in the order it was given.
+ *
+ * These are the only entries in this panel that are promises rather than observations —
+ * everything else here is something the prospect said, and this is something the company
+ * now owes. A rep who picks up an escalation reads it to find out what they have already
+ * been committed to, so it stays legible when empty as well as when full.
+ */
+function Conceded({
+  items,
+  flash,
+  version,
+}: {
+  items: string[];
+  flash: boolean;
+  version: number;
+}) {
+  return (
+    <div
+      key={`conceded-${flash ? version : "steady"}`}
+      className={cx("rounded-md px-2 py-1", flash && "flash")}
+    >
+      <div className="flex items-baseline justify-between gap-4">
+        <span className="text-sm text-muted">Conceded</span>
+        {items.length === 0 && <span className="text-sm text-faint">nothing given</span>}
+      </div>
+      {items.length > 0 && (
+        <ol className="mt-1.5 space-y-1">
+          {items.map((given, i) => (
+            <li key={given} className="flex gap-2 text-xs leading-snug text-listening">
+              <span className="font-mono text-faint tabular-nums">{i + 1}</span>
+              <span>{given}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 function ChipRow({
   label,
   items,
@@ -197,14 +243,16 @@ function ChipRow({
 }: {
   label: string;
   items: string[];
-  tone: "escalate" | "thinking";
+  tone: "escalate" | "thinking" | "listening";
   flash: boolean;
   version: number;
 }) {
   const chip =
     tone === "escalate"
       ? "bg-escalate/12 text-escalate"
-      : "bg-thinking/12 text-thinking";
+      : tone === "listening"
+        ? "bg-listening/12 text-listening"
+        : "bg-thinking/12 text-thinking";
   return (
     <div
       key={`${label}-${flash ? version : "steady"}`}

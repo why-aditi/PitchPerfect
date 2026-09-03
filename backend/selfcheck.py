@@ -25,6 +25,18 @@ CACHE_S = 60.0          # a passing check is good for a minute of calls
 TIMEOUT_S = 6.0         # a tunnel slower than this would fail the call's turns anyway
 
 _cache: dict[str, float] = {}   # base_url -> time of last pass
+# One client for the life of the process. Built per check, every cache miss paid a fresh
+# TLS handshake to the tunnel — 387 ms against 71 ms on a warm connection — and that sat
+# directly in front of the caller's button. Reuse changes nothing about what is verified.
+_client: httpx.AsyncClient | None = None
+
+
+def _shared() -> httpx.AsyncClient:
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(timeout=TIMEOUT_S,
+                                    headers={"ngrok-skip-browser-warning": "1"})
+    return _client
 
 
 def is_loopback(base_url: str) -> bool:
@@ -45,9 +57,12 @@ async def verify(base_url: str, transport: httpx.AsyncBaseTransport | None = Non
 
     url = f"{base_url.rstrip('/')}/health"
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT_S, transport=transport,
-                                     headers={"ngrok-skip-browser-warning": "1"}) as client:
-            r = await client.get(url)
+        if transport is not None:   # the suite injects one; it must not touch the shared client
+            async with httpx.AsyncClient(timeout=TIMEOUT_S, transport=transport,
+                                         headers={"ngrok-skip-browser-warning": "1"}) as client:
+                r = await client.get(url)
+        else:
+            r = await _shared().get(url)
     except httpx.HTTPError as exc:
         return f"cannot reach PUBLIC_BASE_URL ({url}): {exc!r}"
 
