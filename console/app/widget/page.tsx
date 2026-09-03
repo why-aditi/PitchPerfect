@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useLayoutEffect, useRef } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import CallWidget from "@/components/CallWidget";
 
 /**
@@ -54,7 +54,20 @@ function Widget() {
   }
 
   return (
-    <div className="fixed inset-0 flex items-end justify-end">
+    // theme-light pins the palette, and it is not a preference: an iframe reads
+    // prefers-color-scheme from the visitor's OS, not from the page it is sitting on, so a
+    // visitor in dark mode was getting the dark palette painted onto a light host site.
+    // We cannot see the host's design and never will, so the light one is the only palette
+    // that is never actively wrong.
+    //
+    // A class rather than the data-theme attribute globals.css also honours, because the
+    // attribute belongs on <html> and only the root layout renders that. Reaching it meant
+    // an inline script, which brought three problems with it — a nonce needed under any
+    // strict CSP, a React dev warning for rendering a <script>, and Strict Mode's dev
+    // remount wiping attributes React does not manage from JSX, in the one mode this is
+    // run in. Custom properties resolve from the nearest ancestor that sets them, so a
+    // class here beats the dark block on :root by proximity and none of that applies.
+    <div className="theme-light fixed inset-0 flex items-end justify-end">
       {/* The padding is inside the measured box, so the panel's shadow is not clipped by
           the iframe edge. */}
       <div ref={root} className="inline-block p-3">
@@ -65,17 +78,6 @@ function Widget() {
 }
 
 export default function WidgetPage() {
-  // Belt and braces, and the braces are the half that matters here. React's Strict Mode
-  // remounts once in development and resets <html> to only the attributes it manages from
-  // JSX — which clears the data-theme the inline script set, so the widget silently falls
-  // back to the visitor's OS palette. Production never remounts and never needs this, but
-  // the console is run with `npm run dev` (the replay fallback on the live page only
-  // exists outside a production build), so development is the environment this has to be
-  // right in. useLayoutEffect rather than useEffect because it runs before paint.
-  useLayoutEffect(() => {
-    document.documentElement.setAttribute("data-theme", "light");
-  }, []);
-
   return (
     <>
       {/* The console's chrome and opaque background belong to the console, not to an
@@ -90,27 +92,6 @@ export default function WidgetPage() {
           the color-scheme reset loses outright to the more specific selector — so this
           override silently did nothing and the widget rendered as a black rectangle on
           the host page. Beating both without depending on injection order is the point. */}
-      {/* The widget is pinned to the light palette, and it is not a preference: the iframe
-          reads prefers-color-scheme from the visitor's OS, not from the page it is sitting
-          on, so a visitor in dark mode was getting the dark palette painted onto a light
-          host site. The host's own design decides what looks right here and we cannot see
-          it, so the neutral light one is the only palette that is never actively wrong.
-          globals.css already guards every dark rule with :not([data-theme="light"]) — this
-          is that escape hatch, set from a parse-time script rather than an effect so the
-          launcher is never painted dark for a frame first.
-
-          The type switch is the framework's documented shape for an inline script
-          (next/dist/docs .../preventing-flash-before-hydration): text/javascript on the
-          server so the browser runs it while parsing, text/plain once hydrated so it
-          cannot run twice, and suppressHydrationWarning because those two disagree by
-          design. Without it React warns about the script tag in development. */}
-      <script
-        type={typeof window === "undefined" ? "text/javascript" : "text/plain"}
-        suppressHydrationWarning
-        dangerouslySetInnerHTML={{
-          __html: `document.documentElement.setAttribute("data-theme","light")`,
-        }}
-      />
       <style href="pitchpilot-widget-chrome" precedence="high">
         {`html, body { background: transparent !important; }
           :root { color-scheme: normal !important; }

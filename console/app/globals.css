@@ -40,7 +40,14 @@
 
 /* ------------------------------------------------------------------ palettes */
 
-:root {
+/* .theme-light carries the same declarations so a subtree can opt out of the visitor's
+   OS preference without any JavaScript. Custom properties resolve from the nearest
+   ancestor that sets them, so an element inside .theme-light beats the dark block on
+   :root by proximity — specificity does not come into it. The embedded widget uses this:
+   it renders on somebody else's page and must not follow the visitor's dark mode there.
+   One list of values, not two, so the widget cannot drift from the console. */
+:root,
+.theme-light {
   color-scheme: light;
 
   --surface: #f4f5f7;
