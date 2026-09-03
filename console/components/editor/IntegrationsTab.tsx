@@ -70,7 +70,7 @@ function SecretField({
 
       {stored && !editing && !clearing && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-raised px-3 py-2">
-          <Badge tone="live">stored</Badge>
+          <Badge tone="live">Stored</Badge>
           <span className="flex gap-1">
             <Button variant="quiet" className="px-2 py-1 text-xs" onClick={() => onDraft("")}>
               Replace
@@ -159,7 +159,7 @@ export function IntegrationsTab({
         </Hint>
 
         <Card className="space-y-5 p-4">
-          <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">Cal.com</p>
+          <p className="font-display text-base font-semibold text-ink">Cal.com</p>
           <SecretField
             label="API key"
             hint="Reads availability and creates the booking when a demo is agreed."
@@ -182,7 +182,7 @@ export function IntegrationsTab({
         </Card>
 
         <Card className="space-y-5 p-4">
-          <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">HubSpot</p>
+          <p className="font-display text-base font-semibold text-ink">HubSpot</p>
           <SecretField
             label="Private app token"
             hint="Creates the contact and the deal. Needs the crm.objects scopes."
@@ -210,7 +210,7 @@ export function IntegrationsTab({
         </Card>
 
         <Card className="space-y-5 p-4">
-          <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">Slack</p>
+          <p className="font-display text-base font-semibold text-ink">Slack</p>
           <SecretField
             label="Incoming webhook URL"
             hint="Where an escalation lands, with the lead summary, while the prospect is still on the call."

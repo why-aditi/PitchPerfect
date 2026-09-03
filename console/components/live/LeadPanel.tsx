@@ -97,7 +97,7 @@ export function LeadPanel({
           <span
             key={`qual-${flash("qualification") ? version : "steady"}`}
             className={cx(
-              "inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em]",
+              "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium capitalize",
               QUAL[lead.qualification],
               flash("qualification") && "flash",
             )}
@@ -131,9 +131,9 @@ export function LeadPanel({
 }
 
 const QUAL: Record<LeadState["qualification"], string> = {
-  cold: "border-line text-muted",
-  warm: "border-thinking/40 text-thinking",
-  hot: "border-listening/40 text-listening",
+  cold: "bg-raised text-muted",
+  warm: "bg-thinking/12 text-thinking",
+  hot: "bg-listening/12 text-listening",
 };
 
 const BAR: Record<LeadState["qualification"], string> = {
@@ -145,7 +145,7 @@ const BAR: Record<LeadState["qualification"], string> = {
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h3 className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-faint">
+      <h3 className="mb-1.5 text-xs font-medium text-faint">
         {title}
       </h3>
       <div className="space-y-0.5">{children}</div>
@@ -203,8 +203,8 @@ function ChipRow({
 }) {
   const chip =
     tone === "escalate"
-      ? "border-escalate/40 text-escalate"
-      : "border-thinking/40 text-thinking";
+      ? "bg-escalate/12 text-escalate"
+      : "bg-thinking/12 text-thinking";
   return (
     <div
       key={`${label}-${flash ? version : "steady"}`}
@@ -222,7 +222,7 @@ function ChipRow({
             <span
               key={i}
               className={cx(
-                "rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider",
+                "rounded-full px-2 py-0.5 text-xs",
                 chip,
               )}
             >
@@ -246,7 +246,7 @@ function Bant({
 }) {
   return (
     <div className="flex items-center gap-3 py-[3px]">
-      <span className="w-16 font-mono text-[10px] uppercase tracking-wider text-muted">
+      <span className="w-16 text-xs capitalize text-muted">
         {label}
       </span>
       <span className="flex flex-1 gap-1">

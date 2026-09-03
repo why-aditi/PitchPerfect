@@ -52,9 +52,9 @@ export default function CallWidget({
           onClick={begin}
           disabled={asking}
           className={cx(
-            "flex items-center gap-2 rounded-full bg-brand px-5 py-3 text-sm font-medium text-surface",
-            "shadow-[0_8px_24px_-6px_rgba(91,140,255,0.6)] transition-colors hover:bg-brand/90",
-            "disabled:cursor-progress disabled:bg-brand-dim disabled:text-muted",
+            "flex items-center gap-2 rounded-full bg-brand px-5 py-3 text-sm font-medium text-white",
+            "shadow-float transition-colors hover:bg-brand/90",
+            "disabled:cursor-progress disabled:bg-brand-dim disabled:text-white/80",
           )}
         >
           <MicGlyph />
@@ -67,14 +67,14 @@ export default function CallWidget({
   const connecting = call.state === "connecting";
 
   return (
-    <div className="w-[340px] rounded-2xl border border-line bg-panel p-4 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.7)]">
+    <div className="w-[340px] rounded-2xl border border-line bg-panel p-4 shadow-float">
       <div className="flex items-center gap-4">
         <StateRing state={call.state} size={84}>
           <span className="font-mono text-sm text-ink">{clock(call.seconds)}</span>
         </StateRing>
 
         <div className="min-w-0 flex-1">
-          <p className="text-base font-medium text-ink">{STATE_LABEL[call.state]}</p>
+          <p className="font-display text-base font-semibold text-ink">{STATE_LABEL[call.state]}</p>
           <p className="mb-2.5 text-xs text-faint">
             {connecting ? "Placing the call" : "Interrupt any time — it will stop."}
           </p>

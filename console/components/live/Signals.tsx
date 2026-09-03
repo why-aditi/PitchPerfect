@@ -24,9 +24,9 @@ export function ToolChips({ calls }: { calls: ToolCall[] }) {
       {calls.map((c) => (
         <li
           key={`${c.ts}-${c.name}`}
-          className="rise flex items-baseline gap-2 rounded-lg border border-line bg-raised px-2.5 py-1.5"
+          className="rise flex items-baseline gap-2 rounded-lg bg-raised px-2.5 py-1.5"
         >
-          <span className="font-mono text-[11px] text-brand">{c.name}</span>
+          <span className="font-mono text-xs text-brand">{c.name}</span>
           <span className="min-w-0 flex-1 truncate text-[13px] text-ink" title={c.result_summary}>
             {c.result_summary}
           </span>
@@ -38,9 +38,9 @@ export function ToolChips({ calls }: { calls: ToolCall[] }) {
 }
 
 const OUTCOME: Record<Outcome["kind"], { label: string; tone: string }> = {
-  meeting_booked: { label: "Meeting booked", tone: "border-listening/40 text-listening" },
-  lead_qualified: { label: "Lead qualified", tone: "border-brand/40 text-brand" },
-  escalated: { label: "Escalated to a rep", tone: "border-escalate/40 text-escalate" },
+  meeting_booked: { label: "Meeting booked", tone: "bg-listening/12 text-listening" },
+  lead_qualified: { label: "Lead qualified", tone: "bg-brand-soft text-brand" },
+  escalated: { label: "Escalated to a rep", tone: "bg-escalate/12 text-escalate" },
 };
 
 /** PRD G5: a call ends with a booking, a qualified lead or an escalation — never a dead end. */
@@ -59,7 +59,7 @@ export function Outcomes({
         <div
           key={`${o.ts}-${o.kind}`}
           className={cx(
-            "rise flex items-center justify-between rounded-lg border px-3 py-2",
+            "rise flex items-center justify-between rounded-lg px-3 py-2",
             OUTCOME[o.kind].tone,
           )}
         >
@@ -68,8 +68,8 @@ export function Outcomes({
         </div>
       ))}
       {endedAfter !== null && (
-        <p className="px-1 font-mono text-[11px] uppercase tracking-wider text-faint">
-          Call ended · {Math.floor(endedAfter / 60)}m {endedAfter % 60}s
+        <p className="px-1 text-xs text-faint">
+          Call ended after {Math.floor(endedAfter / 60)}m {endedAfter % 60}s
         </p>
       )}
     </div>

@@ -1,10 +1,21 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import { Nav } from "@/components/Nav";
+import { Suspense } from "react";
+import { Bricolage_Grotesque, IBM_Plex_Mono, Instrument_Sans } from "next/font/google";
+import { Shell } from "@/components/Shell";
+import { ThemeScript } from "@/components/theme";
 import "./globals.css";
 
-const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+const display = Bricolage_Grotesque({
+  variable: "--font-display",
+  subsets: ["latin"],
+  axes: ["opsz"],
+});
+const body = Instrument_Sans({ variable: "--font-body", subsets: ["latin"] });
+const mono = IBM_Plex_Mono({
+  variable: "--font-mono",
+  subsets: ["latin"],
+  weight: ["400", "500"],
+});
 
 export const metadata: Metadata = {
   title: "PitchPilot console",
@@ -14,11 +25,19 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${display.variable} ${body.variable} ${mono.variable} h-full antialiased`}
+    >
+      <head>
+        <ThemeScript />
+      </head>
       <body className="flex min-h-full flex-col">
-        {/* Nav renders nothing on /widget — that route is loaded inside the embed iframe. */}
-        <Nav />
-        {children}
+        {/* Shell reads the URL (including ?tab=), which needs a Suspense boundary above it. */}
+        <Suspense fallback={null}>
+          <Shell>{children}</Shell>
+        </Suspense>
       </body>
     </html>
   );

@@ -5,15 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createAgent, getAgent, saveAgent, saveSecrets } from "@/lib/api";
 import type { AgentConfig, Knowledge, Persona, SecretsSet, ToolsEnabled, Voice } from "@/lib/types";
-import { Badge, Button, Tabs } from "@/components/ui";
+import { Badge, Button, cx } from "@/components/ui";
+import { useSection } from "@/components/Shell";
 import { EmbedTab, originError } from "@/components/editor/EmbedTab";
 import { IntegrationsTab, type SecretDraft } from "@/components/editor/IntegrationsTab";
 import { KnowledgeTab } from "@/components/editor/KnowledgeTab";
 import { PersonaTab } from "@/components/editor/PersonaTab";
 import { VoiceTab } from "@/components/editor/VoiceTab";
-
-const TABS = ["Persona", "Knowledge", "Voice", "Integrations", "Embed"] as const;
-type Tab = (typeof TABS)[number];
 
 /** A new agent starts from the same defaults models.py would have given it. */
 const BLANK: AgentConfig = {
@@ -57,7 +55,7 @@ export default function AgentEditor({ params }: { params: Promise<{ id: string }
   const isNew = id === "new";
   const router = useRouter();
 
-  const [tab, setTab] = useState<Tab>("Persona");
+  const tab = useSection();
   const [name, setName] = useState("");
   const [config, setConfig] = useState<AgentConfig | null>(isNew ? BLANK : null);
   const [origins, setOrigins] = useState<string[]>([]);
@@ -101,6 +99,19 @@ export default function AgentEditor({ params }: { params: Promise<{ id: string }
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
+  // Ctrl/Cmd+S is what every operator will try first. The browser's own save dialog is
+  // never what they meant.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        document.getElementById("save-agent")?.click();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   /** Every tab owns one section of the config and patches only that section. */
   const patchConfig = useCallback(
     <K extends "persona" | "voice" | "knowledge" | "tools_enabled">(
@@ -142,7 +153,7 @@ export default function AgentEditor({ params }: { params: Promise<{ id: string }
   const blocked = !name.trim()
     ? "Give the agent a name first."
     : badOrigin
-      ? "One of the allowed origins is not a valid origin — see the Embed tab."
+      ? "One of the allowed origins is not a valid origin — see the Embed section."
       : null;
 
   async function save() {
@@ -191,89 +202,95 @@ export default function AgentEditor({ params }: { params: Promise<{ id: string }
             ? "Save credentials"
             : "Save changes";
 
+  const status =
+    blocked ??
+    note ??
+    (dirty ? "Not live yet. The running config is whatever was saved last." : "In sync with the server.");
+
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
-      <div className="flex items-start justify-between gap-6">
-        <div className="min-w-0 flex-1">
+    <>
+      <div className="sticky top-0 z-10 flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-line bg-surface/80 px-6 py-3 backdrop-blur lg:px-8">
+        <div className="flex min-w-0 items-center gap-3">
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Agent name"
+            placeholder={isNew ? "Name your agent" : "Agent name"}
             aria-label="Agent name"
-            className="w-full border-0 bg-transparent text-2xl font-semibold text-ink outline-none placeholder:text-faint"
+            autoFocus={isNew}
+            className={cx(
+              "min-w-0 bg-transparent font-display text-xl font-semibold tracking-tight text-ink outline-none placeholder:text-faint",
+              isNew ? "w-72 rounded-lg border border-dashed border-line px-3 py-1 focus:border-brand" : "w-64 border-0",
+            )}
           />
-          <div className="mt-1 flex items-center gap-3">
-            <span className="font-mono text-xs text-faint">{isNew ? "unsaved" : id}</span>
-            {dirty && !isNew && <Badge tone="warn">unsaved changes</Badge>}
-          </div>
+          {!isNew && <span className="hidden rounded-md bg-raised px-2 py-0.5 font-mono text-xs text-muted sm:inline">{id}</span>}
+          {dirty && !isNew && <Badge tone="warn">Unsaved changes</Badge>}
         </div>
-        {!isNew && (
-          <div className="flex shrink-0 gap-4 pt-1 text-sm text-muted">
-            <Link href={`/agents/${id}/live`} className="hover:text-ink">
-              Live
-            </Link>
-            <Link href={`/agents/${id}/escalations`} className="hover:text-ink">
-              Escalations
-            </Link>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-6">
-        <Tabs tabs={TABS} active={tab} onSelect={setTab} />
-      </div>
-
-      <section className="mt-8 pb-8">
-        {tab === "Persona" && (
-          <PersonaTab
-            persona={config.persona}
-            onChange={(patch: Partial<Persona>) => patchConfig("persona", patch)}
-          />
-        )}
-        {tab === "Knowledge" && (
-          <KnowledgeTab
-            knowledge={config.knowledge}
-            onChange={(patch: Partial<Knowledge>) => patchConfig("knowledge", patch)}
-          />
-        )}
-        {tab === "Voice" && (
-          <VoiceTab
-            voice={config.voice}
-            onChange={(patch: Partial<Voice>) => patchConfig("voice", patch)}
-          />
-        )}
-        {tab === "Integrations" && (
-          <IntegrationsTab
-            isNew={isNew}
-            secrets={secrets}
-            draft={secretDraft}
-            onDraft={setSecretField}
-            tools={config.tools_enabled}
-            onTools={(patch: Partial<ToolsEnabled>) => patchConfig("tools_enabled", patch)}
-          />
-        )}
-        {tab === "Embed" && (
-          <EmbedTab id={id} isNew={isNew} origins={origins} onChange={setOrigins} />
-        )}
-      </section>
-
-      <div className="sticky bottom-0 -mx-6 border-t border-line bg-surface/95 px-6 py-4 backdrop-blur">
-        <div className="flex items-center gap-4">
-          <Button onClick={save} disabled={saving || Boolean(blocked) || (!isNew && !dirty)}>
+        <div className="flex items-center gap-2">
+          {dirty && !isNew && (
+            <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={() => window.location.reload()}>
+              Discard
+            </Button>
+          )}
+          <Button id="save-agent" onClick={save} disabled={saving || Boolean(blocked) || (!isNew && !dirty)} className="px-3 py-1.5 text-xs">
             {saveLabel}
           </Button>
-          <span className="text-xs text-muted">
-            {blocked ??
-              note ??
-              (dirty
-                ? "Not live yet. The running config is whatever was saved last."
-                : "In sync with the server.")}
-          </span>
         </div>
-        {saveError && (
-          <p className="mt-2 font-mono text-xs text-escalate">{saveError}</p>
-        )}
       </div>
-    </main>
+
+      <div className="mx-auto w-full max-w-3xl px-6 py-8 lg:px-8">
+        <h1 className="font-display text-2xl font-semibold text-ink">{tab}</h1>
+        <p className="mt-1 text-sm text-muted">{TAB_INTRO[tab]}</p>
+        <p
+          className={cx(
+            "mt-3 text-xs leading-relaxed",
+            saveError ? "font-mono text-escalate" : blocked || dirty ? "text-thinking" : "text-faint",
+          )}
+        >
+          {saveError ?? status} {!isNew && <span className="text-faint">· Ctrl+S saves</span>}
+        </p>
+
+        <section className="mt-8 pb-16">
+          {tab === "Persona" && (
+            <PersonaTab
+              persona={config.persona}
+              onChange={(patch: Partial<Persona>) => patchConfig("persona", patch)}
+            />
+          )}
+          {tab === "Knowledge" && (
+            <KnowledgeTab
+              knowledge={config.knowledge}
+              onChange={(patch: Partial<Knowledge>) => patchConfig("knowledge", patch)}
+            />
+          )}
+          {tab === "Voice" && (
+            <VoiceTab
+              voice={config.voice}
+              onChange={(patch: Partial<Voice>) => patchConfig("voice", patch)}
+            />
+          )}
+          {tab === "Integrations" && (
+            <IntegrationsTab
+              isNew={isNew}
+              secrets={secrets}
+              draft={secretDraft}
+              onDraft={setSecretField}
+              tools={config.tools_enabled}
+              onTools={(patch: Partial<ToolsEnabled>) => patchConfig("tools_enabled", patch)}
+            />
+          )}
+          {tab === "Embed" && (
+            <EmbedTab id={id} isNew={isNew} origins={origins} onChange={setOrigins} />
+          )}
+        </section>
+      </div>
+    </>
   );
 }
+
+const TAB_INTRO: Record<ReturnType<typeof useSection>, string> = {
+  Persona: "Who the agent is and what it is trying to do on the call.",
+  Knowledge: "The only prices and competitor claims it may speak.",
+  Voice: "How it decides when you have started and stopped talking.",
+  Integrations: "Where it writes when a call goes well, and which tools it may call.",
+  Embed: "The script tag, and the sites allowed to start a call.",
+};

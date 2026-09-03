@@ -120,9 +120,7 @@ export function PersonaTab({
       </Group>
 
       <Card className="p-4">
-        <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-faint">
-          Not editable
-        </p>
+        <p className="mb-2 text-sm font-medium text-ink">Fixed rules</p>
         <ul className="space-y-1.5 text-xs leading-relaxed text-muted">
           <li>Never invent a price, feature, date or customer name — those come from tools.</li>
           <li>If a tool returns no data, say so. Never estimate.</li>

@@ -94,7 +94,7 @@ export function IconButton({
       onClick={onClick}
       disabled={disabled}
       className={cx(
-        "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line",
+        "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line bg-panel",
         "transition-colors disabled:cursor-not-allowed disabled:opacity-35",
         tone === "danger"
           ? "text-faint hover:border-escalate/50 hover:text-escalate"
@@ -139,9 +139,9 @@ export function Group({
   children: ReactNode;
 }) {
   return (
-    <section className="space-y-3">
-      <div className="flex min-h-8 items-center justify-between gap-4">
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.14em] text-faint">{title}</h2>
+    <section className="space-y-4">
+      <div className="flex min-h-8 items-center justify-between gap-4 border-b border-line-soft pb-3">
+        <h2 className="font-display text-base font-semibold text-ink">{title}</h2>
         {action}
       </div>
       {children}
@@ -331,7 +331,7 @@ export function RawJson({
         type="button"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left font-mono text-[11px] uppercase tracking-[0.12em] text-faint transition-colors hover:text-ink"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted transition-colors hover:text-ink"
       >
         <IconChevron open={open} />
         {label}

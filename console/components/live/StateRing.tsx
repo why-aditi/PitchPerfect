@@ -174,7 +174,7 @@ export function SpeakingPair({
       <p
         aria-hidden={!(agent && prospect)}
         className={cx(
-          "font-mono text-[10px] uppercase tracking-wider transition-opacity",
+          "text-xs transition-opacity",
           agent && prospect ? "text-thinking opacity-100" : "opacity-0",
         )}
       >
@@ -189,7 +189,7 @@ function Meter({ label, active, color }: { label: string; active: boolean; color
     <div className="flex items-center gap-2.5">
       <span
         className={cx(
-          "w-16 shrink-0 font-mono text-[10px] uppercase tracking-wider transition-colors",
+          "w-16 shrink-0 text-xs transition-colors",
           active ? "text-ink" : "text-faint",
         )}
       >

@@ -55,7 +55,7 @@ export function Transcript({
       {!pinned && lines.length > 0 && (
         <button
           onClick={() => setPinned(true)}
-          className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-line bg-raised px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-muted transition-colors hover:text-ink"
+          className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-line bg-panel px-3 py-1 text-xs text-muted shadow-sm transition-colors hover:text-ink"
         >
           Jump to latest
         </button>
@@ -70,7 +70,7 @@ function Line({ line, dense }: { line: TranscriptLine; dense?: boolean }) {
     <div className="rise flex gap-3">
       <span
         className={cx(
-          "shrink-0 pt-0.5 font-mono text-[10px] uppercase tracking-wider",
+          "shrink-0 pt-px text-xs font-medium",
           dense ? "w-14" : "w-20",
           agent ? "text-speaking" : "text-listening",
         )}
