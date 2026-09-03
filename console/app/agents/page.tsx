@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { deleteAgent, listAgents } from "@/lib/api";
 import type { AgentSummary } from "@/lib/types";
-import { Badge, Button, Card, Empty, cx } from "@/components/ui";
+import { Button, Card, Empty, cx } from "@/components/ui";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -32,7 +32,7 @@ function ago(iso: string): string {
 const message = (e: unknown) => (e instanceof Error ? e.message : "unknown error");
 
 const ACTION =
-  "rounded-lg px-2.5 py-1.5 text-xs text-muted transition-colors hover:bg-raised hover:text-ink";
+  "rounded-md px-2.5 py-1.5 text-xs text-muted transition-colors hover:bg-raised hover:text-ink";
 
 /** The id goes in the embed snippet, so it is copied far more often than it is read. */
 function AgentId({ id }: { id: string }) {
@@ -57,13 +57,13 @@ function AgentId({ id }: { id: string }) {
       type="button"
       onClick={copy}
       aria-label={`Copy agent id ${id}`}
-      className="group inline-flex items-center gap-1.5 rounded-md border border-line-soft bg-raised px-2 py-0.5 font-mono text-[11px] text-muted transition-colors hover:border-brand/50 hover:text-brand"
+      className="group inline-flex items-center gap-1.5 rounded-md bg-raised px-2 py-0.5 font-mono text-[12px] text-muted transition-colors hover:text-ink"
     >
       {id}
       <span
         className={cx(
-          "text-[10px] uppercase tracking-wider transition-opacity",
-          copied ? "text-listening" : "text-faint opacity-0 group-hover:opacity-100",
+          "text-[11px] transition-opacity",
+          copied ? "text-listening opacity-100" : "text-faint opacity-0 group-hover:opacity-100",
         )}
       >
         {copied ? "copied" : "copy"}
@@ -72,11 +72,11 @@ function AgentId({ id }: { id: string }) {
   );
 }
 
-function Meta({ label, value, dim }: { label: string; value: string; dim?: boolean }) {
+function Stat({ label, value, dim }: { label: string; value: string; dim?: boolean }) {
   return (
-    <div className="flex items-baseline gap-1.5">
-      <dt className="font-mono text-[10px] uppercase tracking-wider text-faint">{label}</dt>
-      <dd className={cx("text-xs", dim ? "text-faint" : "text-ink")}>{value}</dd>
+    <div className="min-w-0">
+      <dt className="text-xs text-faint">{label}</dt>
+      <dd className={cx("mt-0.5 truncate text-sm", dim ? "text-faint" : "text-ink")}>{value}</dd>
     </div>
   );
 }
@@ -112,28 +112,51 @@ export default function Agents() {
     }
   }
 
+  const calls = agents?.reduce((n, a) => n + a.call_count, 0) ?? 0;
+
   return (
-    <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-10">
+    <main className="mx-auto w-full max-w-5xl px-6 py-8 lg:px-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold tracking-tight text-ink">Agents</h1>
-            {agents && agents.length > 0 && (
-              <Badge>{agents.length === 1 ? "1 agent" : `${agents.length} agents`}</Badge>
-            )}
-          </div>
-          <p className="mt-1.5 text-sm text-muted">
+          <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">Agents</h1>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">
             Each one carries its own persona, pricing, battlecards and integrations, and gets
             its own embed snippet.
           </p>
         </div>
         <Link
           href="/agents/new"
-          className="inline-flex items-center rounded-lg bg-brand px-4 py-2 text-sm font-medium text-surface transition-colors hover:bg-brand/90"
+          className="inline-flex items-center gap-2 rounded-lg bg-ink px-4 py-2 text-sm font-medium text-surface transition-colors hover:bg-ink/85"
         >
+          <Plus />
           New agent
         </Link>
       </div>
+
+      {agents && agents.length > 0 && (
+        <dl className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-4">
+          <Tile label="Agents" value={String(agents.length)} />
+          <Tile label="Calls handled" value={calls.toLocaleString()} />
+          <Tile
+            label="Last updated"
+            value={ago(agents.map((a) => a.updated_at).sort().at(-1) ?? "")}
+          />
+          <Tile
+            label="Last outcome"
+            value={
+              agents.some((a) => a.last_outcome_at)
+                ? ago(
+                    agents
+                      .map((a) => a.last_outcome_at)
+                      .filter((x): x is string => Boolean(x))
+                      .sort()
+                      .at(-1) ?? "",
+                  )
+                : "none yet"
+            }
+          />
+        </dl>
+      )}
 
       {error && (
         <p
@@ -145,54 +168,66 @@ export default function Agents() {
       )}
 
       {!agents && !error && (
-        <div className="mt-6 space-y-2.5" aria-hidden>
+        <div className="mt-8 space-y-2.5" aria-hidden>
           {[0, 1, 2].map((i) => (
-            <Card key={i} className="h-[86px] animate-pulse opacity-60" />
+            <Card key={i} className="h-[92px] animate-pulse opacity-60" />
           ))}
         </div>
       )}
 
       {agents?.length === 0 && (
-        <div className="mt-6">
+        <div className="mt-8">
           <Empty>
-            <p className="text-ink">No agents yet.</p>
-            <p className="mt-1.5">
-              Seed the Vantage demo with{" "}
-              <code className="rounded bg-raised px-1.5 py-0.5 font-mono text-xs text-brand">
+            <p className="font-display text-base font-semibold text-ink">No agents yet</p>
+            <p className="mx-auto mt-1.5 max-w-md">
+              An agent is a persona, a price list and a script tag. Create one from scratch, or
+              seed the Vantage demo from the backend with{" "}
+              <code className="rounded bg-raised px-1.5 py-0.5 font-mono text-xs text-ink">
                 python -m backend.seed
               </code>
-              , or build one from an empty persona.
+              .
             </p>
+            <Link
+              href="/agents/new"
+              className="mt-5 inline-flex items-center gap-2 rounded-lg bg-ink px-4 py-2 text-sm font-medium text-surface transition-colors hover:bg-ink/85"
+            >
+              Create your first agent
+            </Link>
           </Empty>
         </div>
       )}
 
-      <div className="mt-6 space-y-2.5">
+      <div className="mt-8 space-y-2.5">
         {agents?.map((a) => (
-          <Card key={a.id} className="rise p-4 transition-colors hover:border-brand/30">
-            <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2.5">
+          <Card
+            key={a.id}
+            className="rise relative p-5 transition-colors hover:border-faint focus-within:border-brand"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* The stretched link makes the whole card the target; the buttons on the
+                      right sit above it so they still get their own clicks. */}
                   <Link
                     href={`/agents/${a.id}`}
-                    className="text-[15px] font-medium text-ink transition-colors hover:text-brand"
+                    className="font-display text-lg font-semibold text-ink transition-colors after:absolute after:inset-0 after:rounded-xl hover:text-brand"
                   >
                     {a.name}
                   </Link>
                   <AgentId id={a.id} />
                 </div>
-                <dl className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-1">
-                  <Meta label="updated" value={ago(a.updated_at)} />
-                  <Meta label="calls" value={String(a.call_count)} />
-                  <Meta
-                    label="last outcome"
-                    value={a.last_outcome_at ? ago(a.last_outcome_at) : "no outcomes yet"}
+                <dl className="mt-3 grid max-w-md grid-cols-3 gap-4">
+                  <Stat label="Updated" value={ago(a.updated_at)} />
+                  <Stat label="Calls" value={String(a.call_count)} />
+                  <Stat
+                    label="Last outcome"
+                    value={a.last_outcome_at ? ago(a.last_outcome_at) : "none yet"}
                     dim={!a.last_outcome_at}
                   />
                 </dl>
               </div>
 
-              <div className="flex items-center gap-1">
+              <div className="relative z-10 flex items-center gap-1">
                 {confirming === a.id ? (
                   <span className="flex items-center gap-1.5 rounded-lg border border-escalate/30 bg-escalate/5 py-1 pl-2.5 pr-1">
                     <span className="text-xs text-muted">Delete this agent and its calls?</span>
@@ -213,11 +248,15 @@ export default function Agents() {
                   </span>
                 ) : (
                   <>
+                    <Link
+                      href={`/agents/${a.id}/live`}
+                      className="mr-1 inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-3 py-1.5 text-xs text-ink transition-colors hover:border-ink/40"
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-listening" />
+                      Watch live
+                    </Link>
                     <Link href={`/agents/${a.id}`} className={ACTION}>
                       Edit
-                    </Link>
-                    <Link href={`/agents/${a.id}/live`} className={ACTION}>
-                      Live
                     </Link>
                     <Link href={`/agents/${a.id}/escalations`} className={ACTION}>
                       Escalations
@@ -237,5 +276,22 @@ export default function Agents() {
         ))}
       </div>
     </main>
+  );
+}
+
+function Tile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-panel px-5 py-4">
+      <dt className="text-xs text-faint">{label}</dt>
+      <dd className="mt-1 font-display text-2xl font-semibold tracking-tight text-ink">{value}</dd>
+    </div>
+  );
+}
+
+function Plus() {
+  return (
+    <svg viewBox="0 0 14 14" aria-hidden className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+      <path d="M7 2.5v9M2.5 7h9" />
+    </svg>
   );
 }

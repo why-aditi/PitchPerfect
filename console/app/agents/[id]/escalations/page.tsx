@@ -83,10 +83,10 @@ export default function Escalations({ params }: { params: Promise<{ id: string }
   const inCall = channel !== null && !call.error;
 
   return (
-    <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-8">
+    <main className="mx-auto w-full max-w-3xl px-6 py-8 lg:px-8">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-ink">Escalations</h1>
+          <h1 className="font-display text-3xl font-semibold tracking-tight text-ink">Escalations</h1>
           <p className="mt-1 font-mono text-xs text-faint">{id}</p>
         </div>
         {queue.length > 0 && (
@@ -134,13 +134,11 @@ export default function Escalations({ params }: { params: Promise<{ id: string }
                   )}
                 >
                 <div className="flex flex-wrap items-baseline justify-between gap-3">
-                  <span className="text-sm font-medium text-ink">{e.reason}</span>
-                  <span className="font-mono text-[11px] text-faint">
-                    {e.channel}
-                    <span className="uppercase tracking-wider">
-                      {" · "}
-                      {ended ? "call ended" : `${waited(e.ts, now)} waiting`}
-                    </span>
+                  <span className="font-display text-base font-semibold text-ink">{e.reason}</span>
+                  <span className="text-xs text-faint">
+                    <span className="font-mono">{e.channel}</span>
+                    {" — "}
+                    {ended ? "call ended" : `${waited(e.ts, now)} waiting`}
                   </span>
                 </div>
 
@@ -175,7 +173,7 @@ export default function Escalations({ params }: { params: Promise<{ id: string }
                 ) : (
                   <div className="mt-4 flex items-center gap-3">
                     <Button onClick={() => join(e.channel)} disabled={ended}>
-                      Join call
+                      Join call with microphone
                     </Button>
                     {ended ? (
                       <span className="text-xs text-faint">

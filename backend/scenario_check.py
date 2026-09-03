@@ -15,7 +15,10 @@ from .seed import DEMO_ID, demo_config
 SID = "sess_test"
 events: list[dict] = []
 
-EXPECT_TOOLS = ["get_pricing", "get_battlecard", "update_lead_state",
+# update_lead_state is not offered to the speaking model any more: extract.py fills the
+# lead state beside the reply. The script still emits it, because the dispatch accepts it
+# from anywhere and the merge rules it exercises are the point of the scenario.
+EXPECT_TOOLS = ["get_pricing", "get_battlecard",
                 "check_slots", "book_meeting", "cancel_meeting", "escalate_to_human"]
 
 
@@ -47,7 +50,7 @@ SCRIPT = [
 ]
 
 
-async def fake_complete(config, messages, specs):
+async def fake_complete(config, messages, specs, **_):
     """Replaces the Groq round trip. Returns scripted tool calls, then scripted text."""
     assert {s["name"] for s in specs} == set(EXPECT_TOOLS), "the agent must offer exactly its enabled tools"
     step = SCRIPT.pop(0)
@@ -58,7 +61,21 @@ async def fake_complete(config, messages, specs):
 
 async def main():
     rtm.subscribe(events.append)
+    original_complete = proxy.complete
     proxy.complete = fake_complete
+    # The extractor would run the scripted LLM a second time per turn and eat the script.
+    # The scenario feeds update_lead_state through the dispatch itself instead.
+    from . import extract
+    real_schedule = extract.schedule
+    extract.schedule = lambda *a, **k: None
+    try:
+        await _scenario()
+    finally:
+        extract.schedule = real_schedule
+        proxy.complete = original_complete
+
+
+async def _scenario():
 
     # The whole point of Phase 2: config comes from an agent record, not from module
     # constants. The record is built here rather than fetched, so this stays a text-mode

@@ -16,7 +16,7 @@ from ..models import AgentConfig
 __all__ = ["get_pricing", "get_battlecard", "check_slots", "book_meeting",
            "cancel_meeting", "escalate_to_human",
            "sync_contact", "create_deal", "clean_email", "was_actually_said",
-           "specs_for", "SPECS"]
+           "specs_for", "SPECS", "LEAD_STATE_SPEC"]
 
 # Which config switch gates each tool. update_lead_state has no switch: without it the
 # agent cannot remember anything, which is the whole product.
@@ -62,23 +62,6 @@ SPECS = [_nullable(s) for s in [
      "description": "Competitor positioning. Returns no_data for unknown ones — say so, never guess.",
      "parameters": {"type": "object", "properties": {"competitor": {"type": "string"}},
                     "required": ["competitor"]}},
-    {"name": "update_lead_state",
-     "description": "Record anything learned about the prospect. Merges.",
-     "parameters": {"type": "object", "properties": {
-         "company": {"type": "string"}, "email": {"type": "string"},
-         "industry": {"type": "string"}, "use_case": {"type": "string"},
-         "seat_count": {"type": "integer"},
-         # Named from our price's point of view, which a model will otherwise read the
-         # other way round: a live run recorded "we budgeted less than that" as under_budget.
-         "budget_signal": {"enum": ["under_budget", "stretch", "over_budget"],
-                           "description": "our price vs their budget: under_budget fits, "
-                                          "stretch is tight, over_budget is too expensive"},
-         "timeline": {"enum": ["now", "this_quarter", "exploring"]},
-         "objections_raised": {"type": "array", "items": {"type": "string"}},
-         "competitor_mentions": {"type": "array", "items": {"type": "string"}},
-         "bant": {"type": "object", "description": "0-3 each: budget, authority, need, timeline"},
-         "next_action": {"enum": ["book_demo", "send_followup", "escalate"]},
-         "notes": {"type": "array", "items": {"type": "string"}}}}},
     {"name": "check_slots",
      "description": "Real availability, up to 5 slots. Offer two of them, never the list.",
      "parameters": {"type": "object", "properties": {
@@ -104,6 +87,29 @@ SPECS = [_nullable(s) for s in [
      "parameters": {"type": "object", "properties": {"reason": {"type": "string"}},
                     "required": ["reason"]}},
 ]]
+
+
+# Not offered to the speaking model. Lead capture runs beside the reply in extract.py,
+# where a second model is forced to call this after every turn; putting it in front of
+# the reply made every turn two round trips. The dispatch still accepts it from anywhere.
+LEAD_STATE_SPEC = _nullable(
+    {"name": "update_lead_state",
+     "description": "Record anything learned about the prospect. Merges.",
+     "parameters": {"type": "object", "properties": {
+         "company": {"type": "string"}, "email": {"type": "string"},
+         "industry": {"type": "string"}, "use_case": {"type": "string"},
+         "seat_count": {"type": "integer"},
+         # Named from our price's point of view, which a model will otherwise read the
+         # other way round: a live run recorded "we budgeted less than that" as under_budget.
+         "budget_signal": {"enum": ["under_budget", "stretch", "over_budget"],
+                           "description": "our price vs their budget: under_budget fits, "
+                                          "stretch is tight, over_budget is too expensive"},
+         "timeline": {"enum": ["now", "this_quarter", "exploring"]},
+         "objections_raised": {"type": "array", "items": {"type": "string"}},
+         "competitor_mentions": {"type": "array", "items": {"type": "string"}},
+         "bant": {"type": "object", "description": "0-3 each: budget, authority, need, timeline"},
+         "next_action": {"enum": ["book_demo", "send_followup", "escalate"]},
+         "notes": {"type": "array", "items": {"type": "string"}}}}})
 
 
 def specs_for(config: AgentConfig) -> list[dict]:

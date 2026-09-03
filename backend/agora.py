@@ -69,7 +69,16 @@ def start_payload(config: AgentConfig, session_id: str, channel: str, token: str
                 # than its own keep_turns anyway, so the tail was being paid for twice.
                 "max_history": 12,
                 "greeting_message": config.persona.greeting,
-                "failure_message": "Give me one moment.",
+                # Spoken when the engine's request to the proxy fails. Not "one moment":
+                # a prospect told to wait on a turn that is not coming back hears a
+                # broken agent, and the line ran for five minutes on a live call whose
+                # tunnel pointed at another machine. Asking them to go again is honest
+                # and gives the next turn a chance.
+                "failure_message": "Sorry, I lost you for a second. Could you say that again?",
+                # ngrok's free tier serves an HTML interstitial to browser-looking clients;
+                # the engine's user agent is undocumented, so the bypass header goes on
+                # every request. Harmless on any other tunnel.
+                "headers": {"ngrok-skip-browser-warning": "1"},
                 "params": {"model": config.llm_model, "stream": True},
             },
             "turn_detection": {
@@ -90,9 +99,11 @@ def start_payload(config: AgentConfig, session_id: str, channel: str, token: str
             "interruption": {"enable": voice.interruption_enabled, "mode": "start_of_speech"},
             "filler_words": {
                 "enable": bool(voice.filler_phrases),
-                # A tool hop is two LLM round trips, so 1500ms landed after the answer often
-                # enough to be useless. 1000 covers the gap the prospect actually hears.
-                "trigger": {"mode": "fixed_time", "fixed_time_config": {"response_wait_ms": 1000}},
+                # Measured from the LLM request to its first token. The streaming proxy
+                # answers an ordinary turn well inside this, so a filler now only covers
+                # a tool hop — which is the one case the prospect can hear the gap.
+                "trigger": {"mode": "fixed_time",
+                            "fixed_time_config": {"response_wait_ms": voice.filler_wait_ms}},
                 "content": {"mode": "static", "static_config": {
                     "phrases": voice.filler_phrases, "selection_rule": "shuffle"}},
             },

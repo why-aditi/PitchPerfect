@@ -73,9 +73,13 @@ class Voice(BaseModel):
     # value: only the vendor's real speech endpoint is accepted for the current SKU.
     tts_params: dict = Field(default_factory=lambda: {
         "url": "https://api.openai.com/v1/audio/speech", "model": "tts-1", "voice": "coral"})
-    speech_threshold: float = 0.5
-    interrupt_duration_ms: int = 160
-    speaking_interrupt_duration_ms: int = 320   # raise this if "mm-hmm" cuts the agent off
+    # Raised from Agora's 0.5 / 160 / 320 after a call whose turns were cut at 0ms of
+    # playback by "start_of_speech" twenty times in thirty: interrupt_duration_ms is the
+    # only guard while the agent is still thinking, and at 160ms a breath or a keyboard
+    # clears it. Agora's own guidance for noisy lines is 300-500 / 0.6-0.7.
+    speech_threshold: float = 0.6
+    interrupt_duration_ms: int = 300
+    speaking_interrupt_duration_ms: int = 500   # raise this if "mm-hmm" cuts the agent off
     prefix_padding_ms: int = 800
     # Both raised after a live call where the agent talked over the prospect repeatedly.
     # 480ms still cut people off mid-thought — someone counting seats aloud, or saying an
@@ -84,9 +88,17 @@ class Voice(BaseModel):
     # was barging in on any sentence that took longer than three seconds to say. Tune per
     # deployment — a noisy line wants more, a brisk one less.
     silence_duration_ms: int = 700
-    max_wait_ms: int = 5000
+    # 5000 was the hard cap on the slowest turns of a live call (asr_ttlw 5065ms twice):
+    # every ambiguous end-of-sentence cost five seconds before the LLM was even asked.
+    # Agora's default is 3000, and semantic detection usually settles long before it.
+    max_wait_ms: int = 3000
     interruption_enabled: bool = True
-    filler_phrases: list[str] = ["One moment.", "Let me check that.", "Pulling that up."]
+    # These play only when the LLM has produced nothing for filler_wait_ms, which after
+    # the streaming proxy means a tool hop, not an ordinary turn. Short reactions rather
+    # than "one moment": a prospect who is told to wait on every turn hears a broken
+    # agent, which is exactly what one live call sounded like.
+    filler_phrases: list[str] = ["Right.", "Let me look.", "Sure."]
+    filler_wait_ms: int = 1800
 
 
 class ToolsEnabled(BaseModel):
@@ -115,6 +127,9 @@ class AgentConfig(BaseModel):
     # reaching warm) rather than arriving at the booking with an empty panel. mistral-large
     # is a 403 here, and ministral-8b looped itself into a spurious escalation.
     llm_model: str = "mistral-medium-latest"
+    # The lead extractor (extract.py) runs beside the reply, so it can be the smaller and
+    # faster model: it only has to fill a form from six turns of transcript.
+    extract_model: str = "mistral-small-latest"
 
 
 class AgentSecrets(BaseModel):

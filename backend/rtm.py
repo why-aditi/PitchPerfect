@@ -12,6 +12,24 @@ from typing import Any
 
 _subscribers: list = []                       # in-process listeners (tests)
 _queues: list[asyncio.Queue] = []             # connected SSE clients
+_loop: asyncio.AbstractEventLoop | None = None   # the app's loop, for publishes from threads
+
+
+def bind_loop(loop: asyncio.AbstractEventLoop | None = None) -> None:
+    """Remember the loop the SSE queues live on. Tools run in worker threads (a blocking
+    Cal.com call must not stall every other call's turn), and an asyncio.Queue may only
+    be touched from its own loop."""
+    global _loop
+    _loop = loop or asyncio.get_running_loop()
+
+
+def app_loop() -> asyncio.AbstractEventLoop | None:
+    if _loop is not None and not _loop.is_closed():
+        return _loop
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        return None
 
 
 CHANNEL_PREFIX = "pitchpilot-"
@@ -40,12 +58,26 @@ def publish(session_id: str, type_: str, data: dict[str, Any]) -> dict:
 
     for sub in _subscribers:
         sub(msg)
+
+    loop = app_loop()
+    on_loop = True
+    try:
+        on_loop = loop is None or asyncio.get_running_loop() is loop
+    except RuntimeError:
+        on_loop = loop is None      # no loop in this thread: a sync test, deliver inline
+    if on_loop:
+        _deliver(agent_id, msg)
+    else:
+        loop.call_soon_threadsafe(_deliver, agent_id, msg)
+    return msg
+
+
+def _deliver(agent_id, msg) -> None:
     for q in list(_queues):
         try:
             q.put_nowait((agent_id, msg))
         except asyncio.QueueFull:
             _queues.remove(q)  # a dashboard that stopped reading must not stall the call
-    return msg
 
 
 def subscribe(fn) -> None:

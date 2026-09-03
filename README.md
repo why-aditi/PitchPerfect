@@ -28,8 +28,19 @@ cd web && npm install && npm run dev                # :3000
 ```
 
 The engine calls the proxy over the public internet, so a tunnel is required from day one —
-localhost will never work. Point `PUBLIC_BASE_URL` at it and verify with a curl from outside
-the LAN before blaming the engine.
+localhost will never work. Point `PUBLIC_BASE_URL` at it, then prove it lands on *this*
+process and not on some other machine running the same code:
+
+```bash
+curl -s http://127.0.0.1:8000/health          # {"instance": "a61f..."}
+curl -s $PUBLIC_BASE_URL/health               # must show the same instance id
+```
+
+`/start-call` runs the same comparison before it spends any engine minutes and refuses
+with a 503 that names what the tunnel actually reached. A tunnel that answers 200 is not
+proof of anything — on 2026-09-03 the configured domain forwarded to a teammate's
+machine, whose backend had no session bound and answered every turn with the fallback
+line. Per-turn timings and every tool call land in `logs/backend.log`.
 
 ## Test without burning voice minutes
 
@@ -97,6 +108,22 @@ matters most in the console, whose session cookie is HttpOnly and same-site. Ove
 `BACKEND_URL` when the backend is not on `localhost:8000`.
 
 ## Notes
+
+**The turn is streamed, and lead capture is not on it.** `proxy.stream_turn` forwards
+the LLM's text to the engine as it is produced, so TTS starts on the first sentence
+rather than after the whole reply exists. The speaking model is not offered
+`update_lead_state` at all: `extract.py` runs a smaller model beside each turn, forced to
+call that tool with whatever is new, and merges the result while the reply is already
+playing. An ordinary turn is one LLM round trip (~0.5s to first text on Mistral); a tool
+turn is two. Tools that call out (Cal.com, HubSpot, Slack) run in a worker thread so a
+slow booking stalls only its own call. The upstream HTTP client is shared — a fresh TLS
+handshake per hop measured ~0.5s.
+
+**Nothing on the spoken side says "one moment" any more.** The engine's
+`failure_message`, the proxy's fallback line and the filler phrases all used to, so
+every failure mode sounded like the agent asking the prospect to wait. Fillers now fire
+only after `filler_wait_ms` (1800ms, i.e. a tool hop) and say "Right." / "Let me look.";
+a failed turn asks the prospect to say it again.
 
 **Secrets.** Per-agent Cal.com, HubSpot and Slack credentials live in the database, are
 write-only across the API, and read back as `"set"` — never as the value. One shared

@@ -1,21 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { logout } from "@/lib/api";
-import { Button, cx } from "./ui";
+import { usePathname } from "next/navigation";
+import { ThemeToggle } from "./theme";
+import { Dot, cx } from "./ui";
 
-/** The product mark: a level meter, because the thing being built is a voice. */
+/**
+ * The product mark: the call-state ring from the live screen, with a level meter inside —
+ * the two things an operator watches. Drawn in one colour so it sits on either theme and
+ * inside the brand-tinted disc without a second palette.
+ */
 export function Mark({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden className={cx("shrink-0", className)}>
-      <rect width="24" height="24" rx="7" fill="currentColor" opacity="0.16" />
-      <g fill="currentColor">
-        <rect x="5.5" y="10" width="2" height="4" rx="1" opacity="0.55" />
-        <rect x="9" y="6.5" width="2" height="11" rx="1" />
-        <rect x="12.5" y="8.5" width="2" height="7" rx="1" opacity="0.8" />
-        <rect x="16" y="10.75" width="2" height="2.5" rx="1" opacity="0.45" />
+    <svg viewBox="0 0 32 32" aria-hidden className={cx("shrink-0", className)}>
+      <circle cx="16" cy="16" r="15" fill="currentColor" />
+      <circle cx="16" cy="16" r="11.5" fill="none" stroke="#fff" strokeWidth="1.5" opacity="0.55" strokeDasharray="60 12.3" strokeLinecap="round" transform="rotate(-70 16 16)" />
+      <g fill="#fff">
+        <rect x="9.5" y="13.5" width="2.2" height="5" rx="1.1" opacity="0.7" />
+        <rect x="13.1" y="9.5" width="2.2" height="13" rx="1.1" />
+        <rect x="16.7" y="11.5" width="2.2" height="9" rx="1.1" opacity="0.9" />
+        <rect x="20.3" y="14" width="2.2" height="4" rx="1.1" opacity="0.6" />
       </g>
     </svg>
   );
@@ -23,63 +27,90 @@ export function Mark({ className }: { className?: string }) {
 
 export function Wordmark({ className }: { className?: string }) {
   return (
-    <span className={cx("font-semibold tracking-tight text-ink", className)}>
-      Pitch<span className="text-brand">Pilot</span>
+    <span className={cx("font-display font-semibold tracking-tight text-ink", className)}>
+      PitchPilot
     </span>
   );
 }
 
+/**
+ * Whether the FastAPI side answers, polled through the same-origin proxy. The console is
+ * useless without it, so the header says so before a save fails with a vague error.
+ */
+function useBackend(): "up" | "down" | null {
+  const [state, setState] = useState<"up" | "down" | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const probe = async () => {
+      try {
+        const r = await fetch("/api/openapi.json", { method: "HEAD", cache: "no-store" });
+        if (alive) setState(r.ok ? "up" : "down");
+      } catch {
+        if (alive) setState("down");
+      }
+    };
+    void probe();
+    const t = setInterval(probe, 30_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, []);
+  return state;
+}
+
 export function Nav() {
   const pathname = usePathname() ?? "";
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
+  const backend = useBackend();
 
   const embedded = pathname.startsWith("/widget");
 
   // globals.css paints an opaque surface on <body>. Inside the embed iframe that reads as a
-  // black rectangle around the launcher on someone else's page, and the widget route cannot
+  // solid rectangle around the launcher on someone else's page, and the widget route cannot
   // opt out from inside <body>. Undone on navigation so the console keeps its own ground.
   useEffect(() => {
     if (!embedded) return;
-    document.body.classList.add("bg-transparent");
-    return () => document.body.classList.remove("bg-transparent");
+    document.documentElement.style.background = "transparent";
+    document.body.style.background = "transparent";
+    return () => {
+      document.documentElement.style.background = "";
+      document.body.style.background = "";
+    };
   }, [embedded]);
 
   if (embedded) return null;
 
-  async function signOut() {
-    setBusy(true);
-    // The cookie is HttpOnly, so a failed logout call still leaves this browser with nothing
-    // it can do but sign in again. Route either way rather than stranding the operator.
-    try {
-      await logout();
-    } catch {
-      /* already gone, or the backend is down */
-    }
-    router.push("/login");
-  }
-
-  const onLogin = pathname === "/login";
-
+  // Only /login reaches here; everything signed-in lives inside Shell's sidebar.
   return (
-    <header className="sticky top-0 z-30 border-b border-line bg-surface/85 backdrop-blur">
-      <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between gap-4 px-6">
-        <Link
-          href={onLogin ? "/login" : "/agents"}
-          className="flex items-center gap-2.5 transition-opacity hover:opacity-80"
-        >
-          <Mark className="h-7 w-7 text-brand" />
-          <Wordmark className="text-[15px]" />
-          <span className="hidden border-l border-line pl-2.5 font-mono text-[10px] uppercase tracking-[0.16em] text-faint sm:inline">
-            console
+    <header className="sticky top-0 z-30 border-b border-line bg-surface/80 backdrop-blur-md">
+      <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-4 px-6">
+        <span className="flex items-center gap-2.5">
+          <Mark className="h-8 w-8 text-brand" />
+          <Wordmark className="text-[17px]" />
+          <span className="hidden rounded-md border border-line px-1.5 py-0.5 text-[11px] font-medium text-muted sm:inline">
+            Console
           </span>
-        </Link>
+        </span>
 
-        {!onLogin && (
-          <Button variant="quiet" onClick={signOut} disabled={busy} className="px-2.5 py-1.5 text-xs">
-            {busy ? "Signing out…" : "Sign out"}
-          </Button>
-        )}
+        <div className="ml-auto flex items-center gap-3">
+          <span
+            className="hidden items-center gap-2 rounded-full border border-line bg-panel py-1 pl-2.5 pr-3 text-xs text-muted sm:flex"
+            title="FastAPI backend, via the /api proxy"
+          >
+            <Dot
+              tone={
+                backend === "up"
+                  ? "var(--color-listening)"
+                  : backend === "down"
+                    ? "var(--color-escalate)"
+                    : "var(--color-faint)"
+              }
+              pulse={backend === "up"}
+            />
+            {backend === "up" ? "Backend online" : backend === "down" ? "Backend offline" : "Checking backend"}
+          </span>
+          <ThemeToggle />
+        </div>
       </div>
     </header>
   );

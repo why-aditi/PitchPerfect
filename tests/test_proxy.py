@@ -26,7 +26,7 @@ def scripted(*steps):
     """Feeds the tool loop one step per round trip: a tool-call list, or final text."""
     queue = list(steps)
 
-    async def fake(config, messages, specs):
+    async def fake(config, messages, specs, **kw):
         step = queue.pop(0)
         if isinstance(step, list):
             return {"role": "assistant", "content": None, "tool_calls": step}
@@ -227,7 +227,7 @@ def test_the_last_chunk_carries_a_finish_reason(bound):
 
 
 def test_a_failing_llm_still_produces_a_complete_stream(bound):
-    async def explode(config, messages, specs):
+    async def explode(config, messages, specs, **kw):
         raise RuntimeError("groq is down")
 
     proxy.complete = explode
@@ -237,7 +237,7 @@ def test_a_failing_llm_still_produces_a_complete_stream(bound):
 
 def test_a_failing_llm_still_captures_the_lead(bound):
     """PRD 11: the proxy still logs the lead and creates a follow-up task."""
-    async def explode(config, messages, specs):
+    async def explode(config, messages, specs, **kw):
         raise RuntimeError("groq is down")
 
     proxy.complete = explode

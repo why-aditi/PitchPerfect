@@ -22,3 +22,7 @@ CREATE TABLE IF NOT EXISTS calls (
 );
 
 CREATE INDEX IF NOT EXISTS calls_agent_started ON calls (agent_id, started_at DESC);
+
+-- The engine's own id for the session: the key to its turns API, which holds the per-turn
+-- latency breakdown after the call has ended.
+ALTER TABLE calls ADD COLUMN IF NOT EXISTS engine_agent_id text;

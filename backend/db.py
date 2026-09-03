@@ -90,10 +90,13 @@ async def delete_agent(agent_id: str) -> None:
     await pool.execute("DELETE FROM agents WHERE id = $1", agent_id)
 
 
-async def start_call(session_id: str, agent_id: str) -> None:
+async def start_call(session_id: str, agent_id: str, engine_agent_id: str | None = None) -> None:
+    """engine_agent_id is what the Agora turns API is keyed by, and that API is the only
+    per-turn latency record that outlives a call — keep it, or a bad call is unanswerable."""
     pool = await connect()
-    await pool.execute("INSERT INTO calls (session_id, agent_id) VALUES ($1, $2)",
-                       session_id, agent_id)
+    await pool.execute(
+        "INSERT INTO calls (session_id, agent_id, engine_agent_id) VALUES ($1, $2, $3)",
+        session_id, agent_id, engine_agent_id)
 
 
 async def end_call(session_id: str, duration_s: int, outcome: str | None,

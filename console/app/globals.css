@@ -1,49 +1,156 @@
 @import "tailwindcss";
 
 /*
-  PitchPilot console — mission control.
-  Committed dark: this surface is watched during a live call, next to a transcript that
-  moves. Light chrome competes with the signal colours the ring and the lead-state panel
-  depend on, so there is no light variant to keep in sync.
+  PitchPilot console.
+
+  Two themes, one token set. Utilities read the --color-* names below, which resolve at
+  runtime to whichever palette is active — so a component never knows which theme it is
+  in. The four call-state colours are the only thing that carries signal; everything else
+  is chrome and stays quiet.
+
+  Theme selection: [data-theme] on <html> wins; without it the system preference applies.
+  The attribute is stamped before first paint by the inline script in layout.tsx.
 */
-@theme {
-  --color-surface: #0b0d10;
-  --color-panel: #14181d;
-  --color-raised: #1b2027;
-  --color-line: #262d36;
-  --color-line-soft: #1d232a;
+@theme inline {
+  --color-surface: var(--surface);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
 
-  --color-ink: #e8ecf1;
-  --color-muted: #94a0b0;
-  --color-faint: #5f6b7a;
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
 
-  /* One accent, four call states. The states are the product; the accent is the chrome. */
-  --color-brand: #5b8cff;
-  --color-brand-dim: #2f4a91;
+  --color-brand: var(--brand);
+  --color-brand-dim: var(--brand-dim);
+  --color-brand-soft: var(--brand-soft);
 
-  --color-listening: #00e5a0;
-  --color-thinking: #ffb020;
-  --color-speaking: #5b8cff;
-  --color-escalate: #ff5c7a;
+  --color-listening: var(--listening);
+  --color-thinking: var(--thinking);
+  --color-speaking: var(--brand);
+  --color-escalate: var(--escalate);
 
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display), var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --shadow-float: 0 24px 60px -20px rgb(0 0 0 / 0.35), 0 2px 6px -2px rgb(0 0 0 / 0.12);
 }
 
-html {
+/* ------------------------------------------------------------------ palettes */
+
+:root {
+  color-scheme: light;
+
+  --surface: #f4f5f7;
+  --panel: #ffffff;
+  --raised: #eef0f3;
+  --line: #e1e4ea;
+  --line-soft: #ebedf2;
+
+  --ink: #15181d;
+  --muted: #5c6572;
+  --faint: #8b94a1;
+
+  --brand: #2e5fe6;
+  --brand-dim: #a9bdf5;
+  --brand-soft: #e8eefc;
+
+  --listening: #0f9d6e;
+  --thinking: #c47a00;
+  --escalate: #d63b5c;
+}
+
+:root[data-theme="dark"] {
   color-scheme: dark;
+
+  --surface: #0d1014;
+  --panel: #14181e;
+  --raised: #1a1f27;
+  --line: #262d37;
+  --line-soft: #1f252e;
+
+  --ink: #e9edf2;
+  --muted: #98a3b3;
+  --faint: #626d7b;
+
+  --brand: #6d97ff;
+  --brand-dim: #2f4a91;
+  --brand-soft: #182440;
+
+  --listening: #22e3a3;
+  --thinking: #ffb020;
+  --escalate: #ff5c7a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --surface: #0d1014;
+    --panel: #14181e;
+    --raised: #1a1f27;
+    --line: #262d37;
+    --line-soft: #1f252e;
+
+    --ink: #e9edf2;
+    --muted: #98a3b3;
+    --faint: #626d7b;
+
+    --brand: #6d97ff;
+    --brand-dim: #2f4a91;
+    --brand-soft: #182440;
+
+    --listening: #22e3a3;
+    --thinking: #ffb020;
+    --escalate: #ff5c7a;
+  }
+}
+
+/* ------------------------------------------------------------------ base */
+
+html {
+  background: var(--surface);
 }
 
 body {
-  background: var(--color-surface);
-  color: var(--color-ink);
+  background: var(--surface);
+  color: var(--ink);
   font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
 }
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+/* Theme flips should not animate colour on every element — it looks like a page reload.
+   Components opt in to transitions where a hover state needs one. */
+:root.theme-switching * {
+  transition: none !important;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--brand) 22%, transparent);
+}
+
+/* ------------------------------------------------------------------ motion */
 
 /* Values that just changed pulse once rather than staying highlighted — a permanent
    highlight stops meaning "new" about four events in. */
 @keyframes flash {
-  from { background-color: color-mix(in oklab, var(--color-brand) 28%, transparent); }
+  from { background-color: color-mix(in oklab, var(--brand) 26%, transparent); }
   to   { background-color: transparent; }
 }
 .flash { animation: flash 1.4s ease-out; }
@@ -54,6 +161,15 @@ body {
 }
 .rise { animation: rise 0.22s ease-out; }
 
+@media (prefers-reduced-motion: reduce) {
+  .flash, .rise { animation: none; }
+}
+
+/* ------------------------------------------------------------------ chrome */
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: var(--color-line); border-radius: 99px; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+input[type="range"] { accent-color: var(--brand); }
+input[type="number"]::-webkit-inner-spin-button { opacity: 0.4; }
