@@ -31,6 +31,12 @@
   --color-speaking: var(--brand);
   --color-escalate: var(--escalate);
 
+  /* The launcher has its own two tokens rather than reusing ink/panel, because it is the
+     one surface that sits on a page we did not design. In a dark widget theme --ink is a
+     pale text colour, so a launcher painted with it would be near-white on near-white. */
+  --color-launcher: var(--launcher);
+  --color-launcher-ink: var(--launcher-ink);
+
   --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-display), var(--font-body), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -58,15 +64,26 @@
 
   --ink: #15181d;
   --muted: #5c6572;
-  --faint: #8b94a1;
+  /* Darkened from #8b94a1, which was 3.07:1 on white. Every use of it is 12px — the
+     widget's "Interrupt any time" line, transcript speaker labels — so it needed 4.5:1,
+     not the 3:1 that would have covered it at a heading size. Now 4.74:1. */
+  --faint: #6b7480;
 
   --brand: #2e5fe6;
   --brand-dim: #a9bdf5;
   --brand-soft: #e8eefc;
 
-  --listening: #0f9d6e;
-  --thinking: #c47a00;
-  --escalate: #d63b5c;
+  /* Also darkened for 12px text, and only in luminance — the hue is the signal and does
+     not move. These carry meaning in four places (the state ring, the transcript speaker
+     labels, the speaking meters, the barge-in line) and two of them were failing AA on
+     white: listening 3.46:1 and thinking 3.43:1. Now 5.34 and 5.78. escalate goes from
+     3.93:1 on its own 10% tint to 4.83. */
+  --listening: #0b7a56;
+  --thinking: #8f5a00;
+  --escalate: #c22a4c;
+
+  --launcher: #15181d;
+  --launcher-ink: #ffffff;
 }
 
 :root[data-theme="dark"] {
@@ -89,6 +106,9 @@
   --listening: #22e3a3;
   --thinking: #ffb020;
   --escalate: #ff5c7a;
+
+  --launcher: #1b2129;
+  --launcher-ink: #f2f5f9;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -112,7 +132,231 @@
     --listening: #22e3a3;
     --thinking: #ffb020;
     --escalate: #ff5c7a;
+
+    --launcher: #1b2129;
+    --launcher-ink: #f2f5f9;
   }
+}
+
+/* ------------------------------------------------ embedded widget appearance */
+
+/*
+  Six themes, one hue each.
+
+  Two earlier passes got this wrong in the same way twice. The first made every launcher a
+  flavour of near-black, so all six looked identical at idle — when the launcher is the
+  only thing on screen. The second gave two of them green and two of them blue, one light
+  and one dark of each, which is four hues wearing six names. Now: black, green, red,
+  white, blue, gold. No two are a lightness variant of another.
+
+  Each theme owns its launcher colour, because the launcher is the surface with the most
+  reason to match a host page and the only one visible before a call starts. Three sit on
+  a light panel and three on a dark one, and the launcher swatch in the console says which.
+
+  What is NOT themed is the four call-state colours. Green listening, amber thinking, blue
+  speaking, red escalate carry meaning, and the listening/speaking pair is what makes
+  barge-in legible as an overlap. A green theme that recoloured --speaking green would
+  collapse that pair and quietly delete the best moment in the product. So the states are
+  identical across every light theme and every dark theme, tuned only for legibility on
+  their own panel — never chosen per theme.
+
+  Launcher ratios are against the launcher's own text; panel ratios against the theme's own
+  panel. Both computed. The launcher against the HOST page is unknowable from in here,
+  which is what the hairline ring in CallWidget is for.
+*/
+
+/* Black. The default, and what an embed written before any of this existed still gets. */
+.theme-ink {
+  color-scheme: light;
+
+  --surface: #f4f5f7;
+  --panel: #ffffff;
+  --raised: #eef0f3;
+  --line: #e1e4ea;
+  --line-soft: #ebedf2;
+
+  --ink: #15181d;
+  --muted: #5c6572;
+  --faint: #6b7480;
+
+  --brand: #2e5fe6;
+  --brand-dim: #a9bdf5;
+  --brand-soft: #e8eefc;
+
+  --listening: #0b7a56;
+  --thinking: #8f5a00;
+  --escalate: #c22a4c;
+
+  --launcher: #15181d;
+  --launcher-ink: #ffffff;
+}
+
+/* Green. Launcher 9.28:1. The Vantage demo site — cream ground, dark green brand — is
+   exactly the kind of host this belongs on. */
+.theme-forest {
+  color-scheme: light;
+
+  --surface: #f1f5f2;
+  --panel: #ffffff;
+  --raised: #e7efe9;
+  --line: #d5e2d8;
+  --line-soft: #e4ede6;
+
+  --ink: #101a15;
+  --muted: #4c5a51;
+  --faint: #63756a;
+
+  --brand: #2e5fe6;
+  --brand-dim: #a9bdf5;
+  --brand-soft: #e8eefc;
+
+  --listening: #0b7a56;
+  --thinking: #8f5a00;
+  --escalate: #c22a4c;
+
+  --launcher: #0e5049;
+  --launcher-ink: #ffffff;
+}
+
+/* Red. Launcher 7.26:1. Deliberately a deep crimson rather than a bright red: the state
+   colour for escalation is red, and a launcher that shouted would borrow its urgency. */
+.theme-crimson {
+  color-scheme: light;
+
+  --surface: #faf3f4;
+  --panel: #ffffff;
+  --raised: #f4e9eb;
+  --line: #ecd9dc;
+  --line-soft: #f3e6e8;
+
+  --ink: #1d1214;
+  --muted: #5f4a4e;
+  --faint: #75595e;
+
+  --brand: #2e5fe6;
+  --brand-dim: #a9bdf5;
+  --brand-soft: #e8eefc;
+
+  --listening: #0b7a56;
+  --thinking: #8f5a00;
+  --escalate: #c22a4c;
+
+  --launcher: #a32638;
+  --launcher-ink: #ffffff;
+}
+
+/*
+  The three dark-panel themes. All are opt-in: on a light host any of them is a dark slab,
+  and the widget cannot tell you that happened.
+
+  --line is lifted well above the console's dark value in all three, because shadow-float
+  compiles to a fixed black and does nothing on a dark page — the border is then the only
+  thing separating the panel from the host. --muted and --faint are lifted too: the
+  console's dark values fail AA at the 12px these are used at.
+*/
+
+/* White. A pale launcher with dark text, 15.59:1 — inverted from every other theme, and
+   the thing that actually stands out on a dark page. */
+.theme-frost {
+  color-scheme: dark;
+
+  --surface: #0c1013;
+  --panel: #141a1f;
+  --raised: #1c242b;
+  --line: #46545f;
+  --line-soft: #232d35;
+
+  --ink: #eef2f6;
+  --muted: #a7b3bd;
+  --faint: #8f9ba6;
+
+  --brand: #6d97ff;
+  --brand-dim: #2f4a91;
+  --brand-soft: #182440;
+
+  --listening: #22e3a3;
+  --thinking: #ffb020;
+  --escalate: #ff7a93;
+
+  --launcher: #e8ecf1;
+  --launcher-ink: #101418;
+}
+
+/* Blue. Launcher 6.70:1 with white, on a navy panel. Blue is the most common brand colour
+   there is, so this is the one most likely to sit natively on a host that has one. */
+.theme-cobalt {
+  color-scheme: dark;
+
+  --surface: #0a1020;
+  --panel: #0f172a;
+  --raised: #17203a;
+  --line: #445473;
+  --line-soft: #232f4a;
+
+  --ink: #e9eefb;
+  --muted: #a4b0cb;
+  --faint: #909dba;
+
+  --brand: #6d97ff;
+  --brand-dim: #2f4a91;
+  --brand-soft: #182440;
+
+  --listening: #22e3a3;
+  --thinking: #ffb020;
+  --escalate: #ff7a93;
+
+  --launcher: #1d4ed8;
+  --launcher-ink: #ffffff;
+}
+
+/* Gold. The second theme whose launcher takes dark text rather than white — at 5.09:1 a
+   gold light enough to read as gold cannot carry white. Warm panel to match it. */
+.theme-amber {
+  color-scheme: dark;
+
+  --surface: #130f06;
+  --panel: #1a1408;
+  --raised: #241c0e;
+  --line: #574928;
+  --line-soft: #2f2612;
+
+  --ink: #f6efdd;
+  --muted: #bcae8f;
+  --faint: #a2977c;
+
+  --brand: #6d97ff;
+  --brand-dim: #2f4a91;
+  --brand-soft: #182440;
+
+  --listening: #22e3a3;
+  --thinking: #ffb020;
+  --escalate: #ff7a93;
+
+  --launcher: #b7791f;
+  --launcher-ink: #1a1204;
+}
+
+/*
+  Shape is a second, independent axis: any shape composes with any theme. Two radii rather
+  than one, because a launcher and a panel want different amounts of it — a fully round
+  panel looks like a mistake, and a square launcher next to a rounded panel looks like two
+  products. Both are consumed through arbitrary-value utilities in CallWidget.
+*/
+.shape-pill {
+  --launcher-radius: 9999px;
+  --panel-radius: 1rem;
+}
+
+.shape-rounded {
+  --launcher-radius: 0.75rem;
+  --panel-radius: 0.75rem;
+}
+
+/* Not 0: a true right angle reads as an unstyled element rather than a decision, and it
+   aliases badly against the host page at fractional device pixel ratios. */
+.shape-square {
+  --launcher-radius: 0.1875rem;
+  --panel-radius: 0.25rem;
 }
 
 /* ------------------------------------------------------------------ base */

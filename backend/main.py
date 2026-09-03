@@ -274,6 +274,12 @@ EMBED_JS = """/* PitchPilot embed loader. The whole integration on a customer's 
   var script = document.currentScript;
   var agent = new URL(script.src).searchParams.get("agent");
   if (!agent) return console.error("[pitchpilot] embed script has no ?agent= parameter");
+  // Appearance belongs to whoever pastes the snippet, not to whoever configured the agent:
+  // the design being matched is the host page's, and the operator building the agent has
+  // never seen it. Read off the tag, so it needs no request and is right on the first
+  // painted frame. Unknown values fall back to the default in the widget, not here.
+  var theme = script.dataset.theme || "";
+  var shape = script.dataset.shape || "";
   if (document.getElementById("pitchpilot-frame")) return;
 
   var frame = document.createElement("iframe");
@@ -283,7 +289,9 @@ EMBED_JS = """/* PitchPilot embed loader. The whole integration on a customer's 
   // The iframe is served by the console, so its own Origin header always names the
   // console. The host page origin has to be read here and passed down explicitly.
   frame.src = CONSOLE + "/widget?agent=" + encodeURIComponent(agent) +
-    "&origin=" + encodeURIComponent(location.origin);
+    "&origin=" + encodeURIComponent(location.origin) +
+    (theme ? "&theme=" + encodeURIComponent(theme) : "") +
+    (shape ? "&shape=" + encodeURIComponent(shape) : "");
   frame.style.cssText = [
     "position:fixed", "right:20px", "bottom:20px", "z-index:2147483000",
     "border:0", "background:transparent", "color-scheme:normal",

@@ -51,15 +51,22 @@ export default function CallWidget({
         <button
           onClick={begin}
           disabled={asking}
-          // Ink, not brand. This button is the only part of the product that renders on
-          // someone else's page, and the console's blue is the console's, not theirs — on
-          // the Vantage demo it read as a stray indigo pill on a cream and green site.
-          // Near-black sits on any host palette without competing with it, which is the
-          // one thing a launcher we cannot design around has to do.
+          // Its own two tokens, not ink and white. This button is the only part of the
+          // product that paints onto someone else's page, and it is the one surface whose
+          // contrast we cannot compute from in here — so it is chosen per theme rather
+          // than derived from the panel, which in a dark theme would make it near-white
+          // text on a near-white pill.
+          //
+          // The hairline ring is the floor. Every other ratio in a theme is against our
+          // own panel and therefore guaranteed; this one is against pixels we will never
+          // see, so the ring is what stops the launcher dissolving into a host whose
+          // background happens to match it. shadow-float cannot do that job — it compiles
+          // to a fixed black and is invisible on a dark page.
           className={cx(
-            "flex items-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-medium text-white",
-            "shadow-float transition-colors hover:bg-ink/90",
-            "disabled:cursor-progress disabled:bg-ink/40 disabled:text-white/80",
+            "flex items-center gap-2 rounded-[var(--launcher-radius,9999px)] px-5 py-3",
+            "bg-launcher text-sm font-medium text-launcher-ink",
+            "ring-1 ring-black/10 shadow-float transition-colors hover:bg-launcher/90",
+            "disabled:cursor-progress disabled:bg-launcher/40 disabled:text-launcher-ink/80",
           )}
         >
           <MicGlyph />
@@ -72,7 +79,7 @@ export default function CallWidget({
   const connecting = call.state === "connecting";
 
   return (
-    <div className="w-[340px] rounded-2xl border border-line bg-panel p-4 shadow-float">
+    <div className="w-[340px] rounded-[var(--panel-radius,1rem)] border border-line bg-panel p-4 shadow-float">
       <div className="flex items-center gap-4">
         <StateRing state={call.state} size={84}>
           <span className="font-mono text-sm text-ink">{clock(call.seconds)}</span>
