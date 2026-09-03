@@ -4,6 +4,7 @@ Run: uvicorn backend.main:app --reload
 """
 import asyncio
 import json
+import logging
 import os
 import secrets
 import time
@@ -18,15 +19,34 @@ from pydantic import BaseModel
 
 load_dotenv()
 
-from . import agents, agora, console, db, proxy, rtm, state  # noqa: E402  (env first)
+from . import agents, agora, console, db, extract, log as logsetup, proxy, rtm, selfcheck, state  # noqa: E402  (env first)
 from . import tools  # noqa: E402
+
+log = logging.getLogger("pitchpilot.main")
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """The pool is created lazily on first use, so nothing here has to succeed for the
     keyless text-mode paths to work. Closing it on shutdown is what stops a reload leaking
     connections against a free-tier database with a low connection cap."""
+    path = logsetup.setup()
+    rtm.bind_loop()
+    log.info("instance %s up, logging to %s, PUBLIC_BASE_URL=%s",
+             selfcheck.INSTANCE_ID, path, PUBLIC_BASE_URL)
+    # Said once at startup so a wrong tunnel is the first line in the log, not something
+    # discovered on the first call. /start-call repeats the check before spending minutes.
+    async def startup_check():
+        await asyncio.sleep(2)   # uvicorn is not serving yet inside lifespan; probing now is a 502
+        problem = await selfcheck.verify(PUBLIC_BASE_URL)
+        if problem:
+            log.error("%s — live calls will be refused until this is fixed", problem)
+        else:
+            log.info("PUBLIC_BASE_URL reaches this instance")
+
+    check = asyncio.create_task(startup_check())
     yield
+    check.cancel()
     await db.close()
 
 
@@ -73,6 +93,13 @@ async def start_call(req: StartCall, origin: str | None = Header(None)):
         # stops a stranger burning the operator's Agora minutes (PRD 6.1).
         raise HTTPException(403, f"origin {req.page_origin or origin!r} is not allowed")
 
+    # Before anything is spent: the engine will call PUBLIC_BASE_URL for every turn, and a
+    # tunnel that lands on another machine makes every one of them the fallback line.
+    problem = await selfcheck.verify(PUBLIC_BASE_URL)
+    if problem:
+        log.error("refusing /start-call: %s", problem)
+        raise HTTPException(503, problem)
+
     session_id = f"sess_{secrets.token_hex(2)}"
     channel = rtm.channel_for(session_id)
     await agents.bind(session_id, req.agent_id)
@@ -90,8 +117,10 @@ async def start_call(req: StartCall, origin: str | None = Header(None)):
 
     agents.set_engine_agent(session_id, joined["agent_id"])
     state.get(session_id)
+    log.info("[call] %s started: agent=%s engine=%s channel=%s", session_id, req.agent_id,
+             joined["agent_id"], channel)
     if db.DATABASE_URL:
-        await db.start_call(session_id, req.agent_id)
+        await db.start_call(session_id, req.agent_id, joined["agent_id"])
     SESSIONS[session_id] = {"engine_agent_id": joined["agent_id"], "agent_id": req.agent_id,
                             "channel": channel, "started": time.time()}
     return {"app_id": agora.APP_ID, "channel": channel, "rtc_token": prospect_token,
@@ -114,8 +143,13 @@ async def stop_call(req: StopCall):
     except Exception as exc:  # noqa: BLE001
         print(f"[stop-call] leave failed for {req.session_id}: {exc!r}")
     duration = int(time.time() - session["started"])
+    # The last turn's facts are still being extracted beside the reply; the CRM sync
+    # below must see them. Bounded, so a hung provider cannot hang the hangup.
+    await extract.drain(req.session_id)
     final = state.drop(req.session_id)
     bound = agents.for_session(req.session_id)
+    log.info("[call] %s ended after %ss: %s", req.session_id, duration,
+             _outcome(final) if final else None)
 
     if final and bound:
         _, _, agent_secrets = bound
@@ -230,6 +264,13 @@ def embed_js():
         media_type="application/javascript",
         headers={"Cache-Control": "public, max-age=60"},
     )
+
+
+@app.get("/health")
+def health():
+    """Names this process. /start-call fetches it through PUBLIC_BASE_URL to prove the
+    tunnel lands here and not on some other machine running the same code."""
+    return {"ok": True, "instance": selfcheck.INSTANCE_ID, "public_base_url": PUBLIC_BASE_URL}
 
 
 @app.get("/lead-state/{session_id}")

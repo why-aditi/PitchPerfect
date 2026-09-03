@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from backend import agents, rtm, state  # noqa: E402
+from backend import agents, extract, rtm, state  # noqa: E402
 from backend.models import AgentConfig, AgentSecrets, Battlecard, Knowledge, Persona, Tier  # noqa: E402
 from backend.tools import calendar as cal  # noqa: E402
 from backend.tools import crm  # noqa: E402
@@ -19,10 +19,16 @@ from backend.tools import crm  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def clean_module_state():
-    for store in (state._STORE, agents._bound, cal._booked, crm._last_sync):
+    for store in (state._STORE, agents._bound, cal._booked, crm._last_sync,
+                  extract._running, extract._latest, extract._dirty):
         store.clear()
     rtm._subscribers.clear()
     rtm._queues.clear()
+    rtm._loop = None
+    # .env may name a real tunnel; the suite must never reach the network to prove it.
+    # Loopback is skipped by the self-check, which is the behaviour text-mode runs rely on.
+    from backend import main
+    main.PUBLIC_BASE_URL = "http://localhost:8000"
     yield
     for store in (state._STORE, agents._bound, cal._booked, crm._last_sync):
         store.clear()
