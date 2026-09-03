@@ -9,7 +9,7 @@ import { CopyButton, Group, Hint, IconButton, IconPlus, IconTrash, Warn } from "
  * own panel in advance, and a free hue would also let someone collapse the listening green
  * into the speaking blue — the pair whose overlap is how barge-in reads on screen.
  */
-type ThemeName = "ink" | "forest" | "crimson" | "frost" | "cobalt" | "amber";
+type ThemeName = "ink" | "forest" | "crimson" | "mint" | "frost" | "midnight";
 type ShapeName = "pill" | "rounded" | "square";
 
 type ThemeOption = {
@@ -27,7 +27,7 @@ type ThemeOption = {
  * it is a picture of the thing — and splitting six options into two rows of three made a
  * choice out of something nobody was choosing, while pushing the last row below the fold.
  *
- * One hue each: black, green, red, white, blue, gold. Two earlier passes got this wrong
+ * One hue each: black, deep green, red, pale aqua, white, blue-black. Two earlier passes got this wrong
  * the same way twice — first every launcher was a flavour of near-black, then two were
  * green and two were blue with one light and one dark of each, which is four hues wearing
  * six names. None of these is a lightness variant of another.
@@ -55,6 +55,13 @@ const THEMES: ThemeOption[] = [
     dark: false,
   },
   {
+    name: "mint",
+    label: "Mint",
+    hint: "Pale aqua — the one light colour in the set. Takes dark text.",
+    swatch: ["#5eead4", "#ffffff"],
+    dark: false,
+  },
+  {
     name: "frost",
     label: "Frost",
     hint: "A pale launcher on a dark panel. Inverted from the rest, and what stands out on a dark page.",
@@ -62,17 +69,10 @@ const THEMES: ThemeOption[] = [
     dark: true,
   },
   {
-    name: "cobalt",
-    label: "Cobalt",
-    hint: "Blue on navy. The most common brand colour there is.",
-    swatch: ["#1d4ed8", "#0f172a"],
-    dark: true,
-  },
-  {
-    name: "amber",
-    label: "Amber",
-    hint: "Gold on a warm dark panel. Takes dark text, like Frost.",
-    swatch: ["#b7791f", "#1a1408"],
+    name: "midnight",
+    label: "Midnight",
+    hint: "Blue-black, for dark product sites.",
+    swatch: ["#1d3a8f", "#101828"],
     dark: true,
   },
 ];

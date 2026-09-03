@@ -245,6 +245,35 @@
   --launcher-ink: #ffffff;
 }
 
+/* Pale aqua, and the only theme here that is a light colour rather than a dark one.
+   Launcher 9.69:1 with dark text — a mint bright enough to read as mint cannot carry
+   white, so like Frost it inverts. Distinct from Forest at a glance despite both being
+   green-ish: one is a deep bottle green, this is nearly a pastel. */
+.theme-mint {
+  color-scheme: light;
+
+  --surface: #f0fbf8;
+  --panel: #ffffff;
+  --raised: #e6f7f2;
+  --line: #cfeae3;
+  --line-soft: #e0f3ee;
+
+  --ink: #0d1f1b;
+  --muted: #48605a;
+  --faint: #5e7871;
+
+  --brand: #2e5fe6;
+  --brand-dim: #a9bdf5;
+  --brand-soft: #e8eefc;
+
+  --listening: #0b7a56;
+  --thinking: #8f5a00;
+  --escalate: #c22a4c;
+
+  --launcher: #5eead4;
+  --launcher-ink: #06302a;
+}
+
 /*
   The three dark-panel themes. All are opt-in: on a light host any of them is a dark slab,
   and the widget cannot tell you that happened.
@@ -282,20 +311,19 @@
   --launcher-ink: #101418;
 }
 
-/* Blue. Launcher 6.70:1 with white, on a navy panel. Blue is the most common brand colour
-   there is, so this is the one most likely to sit natively on a host that has one. */
-.theme-cobalt {
+/* Blue-black. Launcher 10.22:1 with white, panel text 15.9:1, faint 6.18:1. */
+.theme-midnight {
   color-scheme: dark;
 
-  --surface: #0a1020;
-  --panel: #0f172a;
-  --raised: #17203a;
-  --line: #445473;
-  --line-soft: #232f4a;
+  --surface: #0a0f1a;
+  --panel: #101828;
+  --raised: #182034;
+  --line: #45536e;
+  --line-soft: #232d44;
 
-  --ink: #e9eefb;
-  --muted: #a4b0cb;
-  --faint: #909dba;
+  --ink: #e8edf7;
+  --muted: #a2aec4;
+  --faint: #8e99ad;
 
   --brand: #6d97ff;
   --brand-dim: #2f4a91;
@@ -305,35 +333,8 @@
   --thinking: #ffb020;
   --escalate: #ff7a93;
 
-  --launcher: #1d4ed8;
+  --launcher: #1d3a8f;
   --launcher-ink: #ffffff;
-}
-
-/* Gold. The second theme whose launcher takes dark text rather than white — at 5.09:1 a
-   gold light enough to read as gold cannot carry white. Warm panel to match it. */
-.theme-amber {
-  color-scheme: dark;
-
-  --surface: #130f06;
-  --panel: #1a1408;
-  --raised: #241c0e;
-  --line: #574928;
-  --line-soft: #2f2612;
-
-  --ink: #f6efdd;
-  --muted: #bcae8f;
-  --faint: #a2977c;
-
-  --brand: #6d97ff;
-  --brand-dim: #2f4a91;
-  --brand-soft: #182440;
-
-  --listening: #22e3a3;
-  --thinking: #ffb020;
-  --escalate: #ff7a93;
-
-  --launcher: #b7791f;
-  --launcher-ink: #1a1204;
 }
 
 /*

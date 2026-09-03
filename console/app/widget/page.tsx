@@ -17,9 +17,9 @@ const THEMES: Record<string, string> = {
   ink: "theme-ink",
   forest: "theme-forest",
   crimson: "theme-crimson",
+  mint: "theme-mint",
   frost: "theme-frost",
-  cobalt: "theme-cobalt",
-  amber: "theme-amber",
+  midnight: "theme-midnight",
 };
 
 const SHAPES: Record<string, string> = {
