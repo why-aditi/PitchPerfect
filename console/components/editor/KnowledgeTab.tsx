@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { importTiers } from "@/lib/api";
 import type { Battlecard, Knowledge, Tier } from "@/lib/types";
 import { Badge, Button, Card, Field, Input, Textarea, Toggle } from "@/components/ui";
 import {
@@ -387,10 +388,55 @@ function BattlecardCard({
 
 /* ---------------------------------------------------------------- tab */
 
+/**
+ * Pulls the tiers out of the agent's Notion pricing database into the editor, unsaved.
+ *
+ * It replaces rather than merges, because a name is the only thing a Notion row and a
+ * tier here share and matching on it would silently keep a tier the operator deleted in
+ * Notion. Replacing is the honest import; the review step before saving is this being
+ * left dirty rather than written.
+ */
+function ImportFromNotion({ id, onTiers }: { id: string; onTiers: (t: Tier[]) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async () => {
+    setBusy(true);
+    setNote(null);
+    setError(null);
+    try {
+      const r = await importTiers(id);
+      onTiers(r.tiers);
+      setNote(
+        `${r.tiers.length} tier(s) loaded. ${r.note ?? ""} Nothing is saved until you save the agent.`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Import failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <Button variant="ghost" className="px-3 py-1.5 text-xs" onClick={run} disabled={busy}>
+        {busy ? "Reading Notion…" : "Import from Notion"}
+      </Button>
+      {note && <Hint>{note}</Hint>}
+      {error && <ErrorNote>{error}</ErrorNote>}
+    </div>
+  );
+}
+
 export function KnowledgeTab({
+  id,
+  isNew,
   knowledge,
   onChange,
 }: {
+  id: string;
+  isNew: boolean;
   knowledge: Knowledge;
   onChange: (patch: Partial<Knowledge>) => void;
 }) {
@@ -478,6 +524,9 @@ export function KnowledgeTab({
             ))}
           </div>
         )}
+
+        {/* Needs stored secrets to read, and a new agent has none until it is saved once. */}
+        {!isNew && <ImportFromNotion id={id} onTiers={(t) => onChange({ tiers: t })} />}
 
         <RawJson
           label="Raw JSON — tiers"

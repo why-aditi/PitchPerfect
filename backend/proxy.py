@@ -138,7 +138,11 @@ def _dispatch(sid: str, name: str, args: dict, history: list[dict]) -> dict:
             args = {**args, "email": tools.clean_email(args["email"] or "")}
         lead = state.update(sid, **args)
         rtm.publish(sid, "lead_state", lead)
-        tools.sync_contact(secrets, lead)  # debounced, fire-and-forget
+        # update_lead_state is exempt from the tool gate above (the agent must always be
+        # able to remember), but the CRM write hanging off it is not — the switch is the
+        # only thing standing between a test call and someone's live pipeline.
+        if config.tools_enabled.crm:
+            tools.sync_contact(secrets, lead)  # debounced, fire-and-forget
         return lead
 
     if name == "get_pricing":
@@ -168,7 +172,8 @@ def _dispatch(sid: str, name: str, args: dict, history: list[dict]) -> dict:
         if "error" not in result and not settled:
             lead = state.update(sid, next_action="book_demo", email=result.get("email"))
             rtm.publish(sid, "lead_state", lead)
-            tools.create_deal(secrets, lead, result)
+            if config.tools_enabled.crm:
+                tools.create_deal(secrets, lead, result)
             rtm.publish(sid, "outcome", {"kind": "meeting_booked", "detail": result})
         return result
 

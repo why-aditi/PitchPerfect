@@ -69,6 +69,9 @@ export type SecretsSet = {
   hubspot_pipeline: string;
   hubspot_deal_stage: string;
   slack_webhook_url: "set" | null;
+  notion_token: "set" | null;
+  notion_leads_db: string | null;
+  notion_pricing_db: string | null;
 };
 
 export type Agent = {

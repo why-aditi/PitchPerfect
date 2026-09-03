@@ -3,6 +3,7 @@
 No user table and no registration. The password gates every route here because these
 routes are the only way to read and write integration credentials.
 """
+import asyncio
 import hmac
 import os
 import secrets as pysecrets
@@ -13,6 +14,7 @@ from pydantic import BaseModel
 
 from . import db
 from .models import AgentConfig, AgentSecrets
+from .tools import notion
 
 router = APIRouter(prefix="/console")
 
@@ -107,6 +109,28 @@ async def update_secrets(agent_id: str, body: AgentSecrets,
     require_session(pp_console)
     await db.save_secrets(agent_id, body)
     return body.masked()  # echo the mask, never the values just written
+
+
+@router.post("/agents/{agent_id}/import-tiers")
+async def import_tiers(agent_id: str, pp_console: str | None = Cookie(None)):
+    """Read the agent's Notion pricing database and hand the tiers back for review.
+
+    Deliberately does not save. An import that wrote straight to the config would wipe
+    volume breaks tuned in the editor with rows Notion has no column for, and the
+    operator would find out on a live call. This returns a proposal; the ordinary save
+    on the Knowledge tab is still what commits it.
+    """
+    require_session(pp_console)
+    if await db.get_agent(agent_id) is None:
+        raise HTTPException(404, "no such agent")
+
+    secrets = await db.get_secrets(agent_id)
+    # httpx here is synchronous and Notion is two round trips before the query, so this
+    # would hold the console's event loop for as long as Notion is slow.
+    tiers, note = await asyncio.to_thread(notion.fetch_tiers, secrets)
+    if not tiers:
+        raise HTTPException(422, note or "Nothing to import.")
+    return {"tiers": [t.model_dump() for t in tiers], "note": note}
 
 
 @router.delete("/agents/{agent_id}")
