@@ -113,4 +113,9 @@ async def run(sid: str, history: list[dict]) -> None:
             continue
         args = {k: v for k, v in args.items() if v not in (None, "", [], {})}
         if args:
-            proxy.run_tool(sid, "update_lead_state", args, history)
+            # run_tool is synchronous down to httpx, and the CRM write hangs off this
+            # tool: HubSpot, then Notion, which spends two more requests resolving a
+            # database the first time it sees one. On the loop that is up to 24 s of
+            # stalled audio for every session on this process, after every turn. The
+            # turn loop already offloads run_tool the same way (proxy.run_turn).
+            await asyncio.to_thread(proxy.run_tool, sid, "update_lead_state", args, history)

@@ -7,6 +7,7 @@ front of the first audio on every turn.
 """
 import asyncio
 import json
+import threading
 
 import pytest
 
@@ -192,6 +193,24 @@ def test_extraction_merges_into_the_lead_state_and_publishes(bound, events, monk
     assert state.get(bound)["company"] == "Acme"
     assert state.get(bound)["seat_count"] == 40
     assert "lead_state" in [e["type"] for e in events]
+
+
+def test_extraction_never_runs_a_tool_on_the_event_loop(bound, monkeypatch):
+    """The CRM write hangs off this tool and httpx underneath it is synchronous. Left on
+    the loop it stalls the audio of every session on the process, not just this one — so
+    the extractor has to offload it exactly as the turn loop does."""
+    where = []
+
+    async def fake_complete(config, messages, specs, **kw):
+        return {"role": "assistant", "content": None,
+                "tool_calls": [call("update_lead_state", company="Acme")]}
+
+    monkeypatch.setattr(proxy, "complete", fake_complete)
+    monkeypatch.setattr(proxy, "run_tool",
+                        lambda *a, **k: where.append(threading.current_thread()) or {})
+    asyncio.run(extract.run(bound, [{"role": "user", "content": "we're Acme"}]))
+
+    assert where and where[0] is not threading.main_thread(),         "run_tool was called on the event loop; wrap it in asyncio.to_thread"
 
 
 def test_extraction_failures_never_surface(bound, monkeypatch):
