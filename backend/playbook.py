@@ -79,7 +79,7 @@ def compact_state(state: dict) -> str:
 
 
 def build(config: AgentConfig, state: dict, history: list[dict],
-          keep_turns: int = 8, tz_name: str | None = None) -> list[dict]:
+          keep_turns: int = 4, tz_name: str | None = None) -> list[dict]:
     """Stable prompt, then the volatile block, then the last N turns.
 
     The split is the whole point, and it is about cost rather than wording. Groq caches

@@ -34,12 +34,27 @@ one. bant.authority is your judgement of whether this person can decide."""
 TURNS = 6            # the newest turns are enough: earlier ones were extracted already
 _running: dict[str, asyncio.Task] = {}
 _latest: dict[str, list[dict]] = {}   # the newest history a run has been asked for
-_dirty: set[str] = set()
+_dirty: set[str] = set()      # newer history landed mid-run; go again when it finishes
+_deferred: set[str] = set()   # history nobody has extracted and nothing is going to
 
 
-def schedule(sid: str, history: list[dict]) -> None:
-    """Fire-and-forget from the turn. Safe with no running loop (sync tests)."""
+def schedule(sid: str, history: list[dict], defer: bool = False) -> None:
+    """Fire-and-forget from the turn. Safe with no running loop (sync tests).
+
+    defer records the history without starting a run. A tool-using turn already spent two
+    or three LLM requests out of the same 8000 TPM bucket the extractor draws on, and a
+    live call died on exactly that: four 429s in 82 seconds, two of them silencing a reply.
+    The facts are not lost — TURNS covers the newest six turns either way, so the next
+    plain turn extracts them, and drain() starts a run if the call ends first.
+    """
     _latest[sid] = history
+    if defer:
+        # Not _dirty: that flag means "re-run when the current run finishes", so setting
+        # it here would wake a run in flight and spend the request we just declined to
+        # spend. _deferred only tells drain() there is history nothing has read.
+        _deferred.add(sid)
+        return
+    _deferred.discard(sid)
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -57,6 +72,7 @@ async def _worker(sid: str) -> None:
         if history is None:
             return
         _dirty.discard(sid)
+        _deferred.discard(sid)
         await run(sid, history)
         if sid not in _dirty:
             return
@@ -66,6 +82,15 @@ async def drain(sid: str, timeout_s: float = 3.0) -> None:
     """Wait for the session's extractor to finish — the last turn's facts have to reach
     the CRM sync that /stop-call does. Bounded: a hung provider must not hang the hangup."""
     task = _running.get(sid)
+    if task is None or task.done():
+        # Deferred turns leave history with no run behind it. The hangup is the last
+        # chance those facts have to reach the CRM sync, so start one rather than
+        # waiting on a task that was never created.
+        if sid in _deferred and _latest.get(sid) is not None:
+            try:
+                task = _running[sid] = asyncio.get_running_loop().create_task(_worker(sid))
+            except RuntimeError:
+                task = None
     try:
         if task is not None and not task.done():
             # The worker re-runs while the session is dirty, so waiting on it covers
@@ -77,6 +102,7 @@ async def drain(sid: str, timeout_s: float = 3.0) -> None:
         _running.pop(sid, None)
         _latest.pop(sid, None)
         _dirty.discard(sid)
+        _deferred.discard(sid)
 
 
 async def run(sid: str, history: list[dict]) -> None:

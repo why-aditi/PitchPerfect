@@ -38,6 +38,14 @@ router = APIRouter()
 # change under this proxy. Swapping providers should be two lines of .env, not an edit here.
 LLM_URL = os.getenv("LLM_URL") or "https://api.groq.com/openai/v1/chat/completions"
 LLM_KEY = os.getenv("LLM_API_KEY") or os.getenv("GROQ_API_KEY", "")
+# A second provider, tried once when the primary answers with a 429 whose wait is longer
+# than MAX_WAIT_S — the one rate-limit case that kills a live turn outright rather than
+# just slowing it. Leave LLM_FALLBACK_URL unset and nothing below changes: no extra
+# request, no extra latency, the same exception. LLM_FALLBACK_MODEL matters as much as
+# the URL, because a model id from the wrong provider is a 404 on every turn.
+LLM_FALLBACK_URL = os.getenv("LLM_FALLBACK_URL") or ""
+LLM_FALLBACK_KEY = os.getenv("LLM_FALLBACK_API_KEY") or ""
+LLM_FALLBACK_MODEL = os.getenv("LLM_FALLBACK_MODEL") or ""
 PROXY_SECRET = os.getenv("LLM_PROXY_SECRET", "")
 MAX_TOOL_HOPS = 4
 # A live turn cannot wait long. connect is generous for a cold provider; read is per
@@ -204,8 +212,10 @@ async def respond(sid: str, history: list[dict], sink=None) -> str:
         return text
     finally:
         log.info("[hops] %s %s", sid, hops)
-        # Lead capture runs beside the next turn, never in front of this one.
-        extract.schedule(sid, history)
+        # Lead capture runs beside the next turn, never in front of this one — and not at
+        # all after a turn that already spent two or three requests on tool hops, which is
+        # where the TPM ceiling actually gets hit.
+        extract.schedule(sid, history, defer=any(h[1] != "text" for h in hops))
 
 
 def run_tool(sid: str, name: str, args: dict, history: list[dict] | None = None) -> dict:
@@ -446,12 +456,15 @@ def _http() -> httpx.AsyncClient:
 
 async def complete(config: AgentConfig, messages: list[dict], specs: list[dict],
                    resamples: int = 1, sink=None, model: str | None = None,
-                   tool_choice=None) -> dict:
+                   tool_choice=None, *, _url: str | None = None,
+                   _key: str | None = None) -> dict:
     """One LLM round trip. Returns the assistant message, tool calls included.
 
     Streams: text deltas go to sink as they arrive, tool-call deltas are accumulated into
     the returned message. The engine hears the first sentence while the rest is still
     being generated, which is the single largest latency lever a custom LLM has.
+
+    _url/_key are the fallback provider re-entering this function, never a caller.
     """
     if not LLM_KEY:
         # ponytail: no key means text-mode smoke testing, never a silent production fallback
@@ -460,10 +473,11 @@ async def complete(config: AgentConfig, messages: list[dict], specs: list[dict],
                "tools": [{"type": "function", "function": s} for s in specs]}
     if tool_choice is not None:
         payload["tool_choice"] = tool_choice
-    headers = {"Authorization": f"Bearer {LLM_KEY}", "Accept": "text/event-stream"}
+    url = _url or LLM_URL
+    headers = {"Authorization": f"Bearer {_key or LLM_KEY}", "Accept": "text/event-stream"}
     client = _http()
     for attempt in range(resamples + 1):
-        async with client.stream("POST", LLM_URL, json=payload, headers=headers) as r:
+        async with client.stream("POST", url, json=payload, headers=headers) as r:
             if not r.is_error:
                 message = {"role": "assistant", "content": ""}
                 async for kind, value in _parse_sse(r.aiter_lines()):
@@ -484,10 +498,21 @@ async def complete(config: AgentConfig, messages: list[dict], specs: list[dict],
             log.warning("rate limited, waiting %ss then retrying", wait)
             await asyncio.sleep(wait)
             continue
+        if status == 429 and wait is None and LLM_FALLBACK_URL and _url is None:
+            # Waiting is off the table — that is what wait is None means — so the choice
+            # is another provider or the fallback line. resamples=0: one round trip, no
+            # second wait stacked on top of the one we just refused.
+            second = LLM_FALLBACK_MODEL or payload["model"]
+            log.warning("rate limited past the %ss cap on %s, falling back to %s on %s",
+                        MAX_WAIT_S, payload["model"], second, LLM_FALLBACK_URL)
+            return await complete(config, messages, specs, resamples=0, sink=sink,
+                                  model=second, tool_choice=tool_choice,
+                                  _url=LLM_FALLBACK_URL,
+                                  _key=LLM_FALLBACK_KEY or LLM_KEY)
         # The provider names the offending field in the body. Without it a 400 here is
         # indistinguishable from any other failure, and every turn just becomes the
         # fallback line — which is what "it says it has to look that up" sounds like.
-        raise RuntimeError(f"LLM {status} from {LLM_URL}: {body[:400]}")
+        raise RuntimeError(f"LLM {status} from {url}: {body[:400]}")
     raise RuntimeError(f"LLM gave up after {resamples + 1} attempts")
 
 

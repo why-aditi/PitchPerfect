@@ -39,6 +39,10 @@ async def drain(agen):
     return [chunk async for chunk in agen]
 
 
+async def noop_sleep(_seconds):
+    """The retry path's wait, without spending it. Only the ordering matters here."""
+
+
 # --- dispatch --------------------------------------------------------------------------
 
 def test_pricing_is_answered_from_the_agents_own_knowledge(bound):
@@ -312,6 +316,136 @@ def test_a_short_rate_limit_is_waited_out_and_a_long_one_is_not():
     assert proxy._retry_after(429, {}, "try again in 47.5s") is None, "too long to hold a call"
     assert proxy._retry_after(429, {}, "no number here") is None
     assert proxy._retry_after(400, {}, body) is None, "only a rate limit is worth waiting on"
+
+
+# --- the fallback provider ---------------------------------------------------------------
+
+OVER_CAP = ('{"error":{"message":"Rate limit reached for model `openai/gpt-oss-20b` ... '
+            'Please try again in 47.5s.","code":"rate_limit_exceeded"}}')
+
+
+class FakeStream:
+    """One canned upstream response, shaped like the bit of httpx that complete() touches."""
+
+    def __init__(self, status, body, headers=None):
+        self.status_code = status
+        self._body = body
+        self.headers = headers or {}
+
+    @property
+    def is_error(self):
+        return self.status_code >= 400
+
+    async def aread(self):
+        return self._body.encode()
+
+    async def aiter_lines(self):
+        for line in self._body.splitlines():
+            yield line
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+def sse(text):
+    """A minimal chat.completion.chunk stream carrying one piece of assistant text."""
+    chunk = {"choices": [{"delta": {"content": text}}]}
+    return "\n".join([f"data: {json.dumps(chunk)}", "", "data: [DONE]"])
+
+
+def upstream(monkeypatch, *responses):
+    """Answer each POST with the next canned response; record where it was sent."""
+    seen = []
+    queue = list(responses)
+
+    class Client:
+        def stream(self, method, url, json=None, headers=None):
+            seen.append({"url": url, "model": json["model"], "headers": headers})
+            return queue.pop(0)
+
+    monkeypatch.setattr(proxy, "_http", lambda: Client())
+    return seen
+
+
+def test_an_over_cap_rate_limit_with_no_fallback_configured_still_raises(config, monkeypatch):
+    """The behaviour every caller is written against today. Configuring nothing must not
+    move it — no second provider, no second request."""
+    monkeypatch.setattr(proxy, "LLM_KEY", "k")
+    monkeypatch.setattr(proxy, "LLM_FALLBACK_URL", "")
+    seen = upstream(monkeypatch, FakeStream(429, OVER_CAP))
+
+    with pytest.raises(RuntimeError) as caught:
+        asyncio.run(proxy.complete(config, [], []))
+
+    assert f"LLM 429 from {proxy.LLM_URL}" in str(caught.value)
+    assert len(seen) == 1, "the happy path pays for nothing it did not before"
+
+
+def test_an_over_cap_rate_limit_falls_back_to_the_second_provider(config, monkeypatch):
+    """47.5s is longer than a prospect will hold, so the turn is worth more to another
+    provider than to the wait."""
+    monkeypatch.setattr(proxy, "LLM_KEY", "primary-key")
+    monkeypatch.setattr(proxy, "LLM_FALLBACK_URL", "https://second.test/v1/chat/completions")
+    monkeypatch.setattr(proxy, "LLM_FALLBACK_KEY", "second-key")
+    monkeypatch.setattr(proxy, "LLM_FALLBACK_MODEL", "second-model")
+    seen = upstream(monkeypatch,
+                    FakeStream(429, OVER_CAP),
+                    FakeStream(200, sse("Thirty nine a seat.")))
+
+    reply = asyncio.run(proxy.complete(config, [], []))
+
+    assert reply["content"] == "Thirty nine a seat."
+    assert [s["url"] for s in seen] == [proxy.LLM_URL, "https://second.test/v1/chat/completions"]
+    assert seen[1]["model"] == "second-model", "the primary's model id is a 404 over there"
+    assert seen[1]["headers"]["Authorization"] == "Bearer second-key"
+
+
+def test_a_short_rate_limit_never_reaches_the_fallback(config, monkeypatch):
+    """A wait the filler already covers is still the cheaper answer, and stacking a
+    provider hop behind it would cost the turn twice."""
+    monkeypatch.setattr(proxy, "LLM_KEY", "k")
+    monkeypatch.setattr(proxy, "LLM_FALLBACK_URL", "https://second.test/v1/chat/completions")
+    monkeypatch.setattr(asyncio, "sleep", noop_sleep)
+    short = '{"error":{"message":"Please try again in 1.5s.","code":"rate_limit_exceeded"}}'
+    seen = upstream(monkeypatch,
+                    FakeStream(429, short),
+                    FakeStream(200, sse("Back on the primary.")))
+
+    reply = asyncio.run(proxy.complete(config, [], []))
+
+    assert reply["content"] == "Back on the primary."
+    assert [s["url"] for s in seen] == [proxy.LLM_URL, proxy.LLM_URL]
+
+
+def test_a_failing_fallback_raises_the_same_shape_as_a_failing_primary(config, monkeypatch):
+    """One attempt, then the caller sees exactly what it saw before there was a fallback."""
+    monkeypatch.setattr(proxy, "LLM_KEY", "k")
+    monkeypatch.setattr(proxy, "LLM_FALLBACK_URL", "https://second.test/v1/chat/completions")
+    monkeypatch.setattr(proxy, "LLM_FALLBACK_MODEL", "second-model")
+    seen = upstream(monkeypatch,
+                    FakeStream(429, OVER_CAP),
+                    FakeStream(429, '{"error":{"message":"quota is zero"}}'))
+
+    with pytest.raises(RuntimeError) as caught:
+        asyncio.run(proxy.complete(config, [], []))
+
+    assert "LLM 429 from https://second.test/v1/chat/completions" in str(caught.value)
+    assert len(seen) == 2, "one fallback attempt, not a second round of retries"
+
+
+def test_a_non_rate_limit_failure_is_not_worth_a_second_provider(config, monkeypatch):
+    """A 400 is the request, not the quota — the other provider would reject it too."""
+    monkeypatch.setattr(proxy, "LLM_KEY", "k")
+    monkeypatch.setattr(proxy, "LLM_FALLBACK_URL", "https://second.test/v1/chat/completions")
+    seen = upstream(monkeypatch, FakeStream(400, '{"error":{"code":"invalid_request"}}'))
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(proxy.complete(config, [], []))
+
+    assert len(seen) == 1
 
 
 def test_a_mangled_email_never_reaches_the_lead_state(bound):

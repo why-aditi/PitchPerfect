@@ -273,3 +273,94 @@ def test_stop_call_waits_for_the_last_extraction(bound, monkeypatch):
 async def _aiter(lines):
     for line in lines:
         yield line
+
+
+def test_a_tool_turn_does_not_also_spend_a_request_on_extraction(bound, monkeypatch):
+    """Four 429s in an 82s call, two of them silencing a reply. A turn with tool hops has
+    already spent two or three requests out of the same 8000 TPM bucket, so the extractor
+    stands down and the next plain turn picks the facts up instead."""
+    runs = []
+
+    async def record(config, messages, specs, **kw):
+        runs.append(messages[-1]["content"])
+        return {"role": "assistant", "content": None, "tool_calls": []}
+
+    monkeypatch.setattr(proxy, "complete", record)
+
+    async def go():
+        extract.schedule(bound, [{"role": "user", "content": "tool turn"}], defer=True)
+        await asyncio.sleep(0)
+        assert runs == [], "a deferred turn must not start an extraction"
+        extract.schedule(bound, [{"role": "user", "content": "plain turn"}])
+        await extract.drain(bound)
+
+    asyncio.run(go())
+    assert len(runs) == 1, "one run, covering both turns"
+    assert "plain turn" in runs[0]
+
+
+def test_deferred_facts_still_reach_the_crm_when_the_call_ends(bound, monkeypatch):
+    """A call that ends on a tool turn has history nothing has extracted yet. The hangup
+    is its last chance, so drain starts the run it deferred rather than waiting on a task
+    that was never created."""
+    async def late(config, messages, specs, **kw):
+        return {"role": "assistant", "content": None,
+                "tool_calls": [call("update_lead_state", company="Deferred Co")]}
+
+    monkeypatch.setattr(proxy, "complete", late)
+
+    async def go():
+        extract.schedule(bound, [{"role": "user", "content": "we are Deferred Co"}], defer=True)
+        await extract.drain(bound)
+
+    asyncio.run(go())
+    assert state.get(bound)["company"] == "Deferred Co"
+
+
+def test_drain_does_not_re_extract_what_already_ran(bound, monkeypatch):
+    """drain starting a run for deferred history must not fire a second, redundant request
+    on every ordinary hangup."""
+    runs = []
+
+    async def record(config, messages, specs, **kw):
+        runs.append(1)
+        return {"role": "assistant", "content": None, "tool_calls": []}
+
+    monkeypatch.setattr(proxy, "complete", record)
+
+    async def go():
+        extract.schedule(bound, [{"role": "user", "content": "plain turn"}])
+        # The run has to finish BEFORE drain, or drain waits on the live task and never
+        # reaches the branch that starts one — which is the branch under test.
+        for _ in range(10):
+            await asyncio.sleep(0)
+        assert runs, "the extraction should have completed before drain"
+        await extract.drain(bound)
+
+    asyncio.run(go())
+    assert len(runs) == 1, f"expected exactly one extraction, got {len(runs)}"
+
+
+def test_a_deferred_turn_does_not_wake_a_run_already_in_flight(bound, monkeypatch):
+    """defer marks the session dirty so drain can find it, and _worker re-runs while dirty.
+    A deferred turn landing beside a live extraction must not spend the request it just
+    declined to spend."""
+    runs = []
+    gate = asyncio.Event()
+
+    async def slow(config, messages, specs, **kw):
+        runs.append(messages[-1]["content"])
+        await gate.wait()
+        return {"role": "assistant", "content": None, "tool_calls": []}
+
+    monkeypatch.setattr(proxy, "complete", slow)
+
+    async def go():
+        extract.schedule(bound, [{"role": "user", "content": "plain"}])
+        await asyncio.sleep(0)
+        extract.schedule(bound, [{"role": "user", "content": "tool turn"}], defer=True)
+        gate.set()
+        await extract.drain(bound)
+
+    asyncio.run(go())
+    assert len(runs) == 1, f"the deferred turn spent a request anyway: {len(runs)} runs"
