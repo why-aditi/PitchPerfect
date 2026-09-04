@@ -79,7 +79,8 @@ def compact_state(state: dict) -> str:
 
 
 def build(config: AgentConfig, state: dict, history: list[dict],
-          keep_turns: int = 4, tz_name: str | None = None) -> list[dict]:
+          keep_turns: int = 4, tz_name: str | None = None,
+          session_id: str = "") -> list[dict]:
     """Stable prompt, then the volatile block, then the last N turns.
 
     The split is the whole point, and it is about cost rather than wording. Groq caches
@@ -107,6 +108,19 @@ def build(config: AgentConfig, state: dict, history: list[dict],
     # Byte-identical on every request for a given agent. Nothing may be added here.
     messages = [{"role": "system", "content": system_prompt(config)}]
     volatile = f"Right now it is {now}." + "\n" + f"Lead state so far: {compact_state(state)}"
+    # Availability rides in the prompt so the commonest question on a booking call does not
+    # cost a tool hop. A tool turn is two LLM round trips at minimum, which is why every
+    # slow turn in the logs is a tool turn; answered from here it is one, and one is under
+    # a second. check_slots stays available for anything this list cannot answer — a
+    # different week, or a slot taken since the call started.
+    if session_id:
+        from .tools import calendar as _cal   # local: calendar imports models, not this
+        slots = _cal.prefetched(session_id)
+        if slots:
+            offers = "; ".join(s["human"] for s in slots)
+            volatile += ("\n" + f"Open times, already checked: {offers}. Offer these "
+                         "directly. Only call check_slots if they want a week this list "
+                         "does not cover.")
     if older:
         volatile += "\n" + f"Earlier in this call: {_collapse(older)}"
     messages.append({"role": "system", "content": volatile})

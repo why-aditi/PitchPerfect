@@ -7,7 +7,7 @@ discipline instead of the API (PRD 8).
 from . import calendar, crm, escalation  # noqa: F401  (the proxy dispatches through these)
 from .battlecards import get_battlecard
 from .calendar import (book_meeting, cancel_meeting, check_slots, clean_email,
-                       was_actually_said)
+                       drop_prefetched, prefetch, prefetched, was_actually_said)
 from .crm import create_deal, sync_contact
 from .escalation import escalate_to_human
 from .negotiation import propose_concession
@@ -17,6 +17,7 @@ from ..models import AgentConfig
 __all__ = ["get_pricing", "get_battlecard", "check_slots", "book_meeting",
            "cancel_meeting", "escalate_to_human", "propose_concession",
            "sync_contact", "create_deal", "clean_email", "was_actually_said",
+           "prefetch", "prefetched", "drop_prefetched",
            "specs_for", "SPECS", "LEAD_STATE_SPEC"]
 
 # Which config switch gates each tool. update_lead_state has no switch: without it the

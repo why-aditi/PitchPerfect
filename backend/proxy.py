@@ -176,7 +176,7 @@ async def respond(sid: str, history: list[dict], sink=None) -> str:
     """
     config, secrets = _bound(sid)
     messages = playbook.build(config, state.get(sid), history,
-                              tz_name=agents.timezone_for(sid))
+                              tz_name=agents.timezone_for(sid), session_id=sid)
     specs = tools.specs_for(config)
     hops = []
     try:
@@ -310,6 +310,10 @@ def _dispatch(sid: str, name: str, args: dict, history: list[dict]) -> dict:
         settled = result.get("already_booked") or "rescheduled_from" in result
         if "error" not in result and not settled:
             lead = state.update(sid, next_action="book_demo", email=result.get("email"))
+            # One of the times the prompt is carrying has just been taken. Dropping the
+            # list is cheaper than refreshing it and safer than leaving it: the agent falls
+            # back to check_slots, which is correct by construction.
+            tools.drop_prefetched(sid)
             rtm.publish(sid, "lead_state", lead)
             if config.tools_enabled.crm:
                 tools.create_deal(secrets, lead, result)

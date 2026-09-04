@@ -384,3 +384,70 @@ def test_an_invented_address_is_still_refused():
     said = [{"role": "user", "content": "no I would rather not give that out"}]
     assert not was_actually_said("keshav@gmail.com", said)
     assert not was_actually_said("dana.reyes@gmail.com", said)
+
+
+def _cal_secrets():
+    from backend.models import AgentSecrets
+    return AgentSecrets(calcom_api_key="cal_live_TEST", calcom_event_type_id="6900272")
+
+
+def test_an_empty_window_widens_instead_of_costing_a_second_llm_hop(monkeypatch):
+    """A live call: the agent asked days_ahead=0, Cal.com returned nothing because the
+    window was zero-length, and the agent burned a whole extra LLM round trip asking again
+    with days_ahead=1. sess_ff5b turn 5 spent four hops that way. One more HTTP call is
+    ~200ms; one more hop is ~700ms and it is the commonest slow turn there is."""
+    import backend.tools.calendar as cal
+
+    windows = []
+
+    class _R:
+        status_code = 200
+
+        def __init__(self, payload):
+            self._p = payload
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self._p
+
+    def fake_get(url, **kw):
+        start = kw["params"]["start"]
+        end = kw["params"]["end"]
+        windows.append((start, end))
+        if start == end:  # the zero-length window the model keeps asking for
+            return _R({"data": {}})
+        return _R({"data": {"2026-09-08": [{"start": "2026-09-08T10:30:00+05:30"},
+                                           {"start": "2026-09-08T15:30:00+05:30"}]}})
+
+    monkeypatch.setattr(cal.httpx, "get", fake_get)
+    result = cal.check_slots(_cal_secrets(), days_ahead=0, timezone_name="Asia/Calcutta")
+
+    assert result["slots"], "an empty window must come back with the next available times"
+    assert result.get("widened"), "the agent has to know these are not the day it asked for"
+    assert len(windows) == 2, "widened exactly once, not in a loop"
+
+
+def test_a_window_that_already_has_slots_is_not_widened(monkeypatch):
+    """Widening is the fallback, not the default — a day with real openings must answer
+    for itself, and must not cost a second HTTP call."""
+    import backend.tools.calendar as cal
+
+    calls = []
+
+    class _R:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"data": {"2026-09-08": [{"start": "2026-09-08T10:30:00+05:30"}]}}
+
+    def fake_get(url, **kw):
+        calls.append(1)
+        return _R()
+
+    monkeypatch.setattr(cal.httpx, "get", fake_get)
+    result = cal.check_slots(_cal_secrets(), days_ahead=1, timezone_name="Asia/Calcutta")
+    assert result["slots"] and not result.get("widened")
+    assert len(calls) == 1

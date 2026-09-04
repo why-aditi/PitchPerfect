@@ -134,3 +134,38 @@ def test_the_cacheable_prefix_never_moves(config):
 
     # ...and everything that moves has to actually be present, just later.
     assert "Acme" in warm[1]["content"] and "Right now it is" in warm[1]["content"]
+
+
+def test_prefetched_slots_ride_in_the_prompt_so_the_agent_need_not_ask(config):
+    """A tool turn is two LLM round trips at minimum, which is why every slow turn in the
+    logs is a tool turn. Availability answered from the prompt is one, and one is under a
+    second."""
+    from backend.tools import calendar as cal
+
+    cal._prefetched["sess_p"] = [{"iso": "2026-09-08T10:30:00+05:30",
+                                  "human": "Monday at 10:30am"},
+                                 {"iso": "2026-09-08T15:30:00+05:30",
+                                  "human": "Monday at 3:30pm"}]
+    try:
+        volatile = playbook.build(config, {}, [], session_id="sess_p")[1]["content"]
+    finally:
+        cal.drop_prefetched("sess_p")
+
+    assert "Monday at 10:30am" in volatile and "Monday at 3:30pm" in volatile
+    assert "check_slots" in volatile, "the escape hatch has to be named or it is never used"
+
+
+def test_the_prompt_carries_no_slots_line_when_nothing_was_prefetched(config):
+    """A calendar that is slow, down or unconfigured must leave the prompt exactly as it
+    was — the slots line is an optimisation, never a dependency."""
+    volatile = playbook.build(config, {}, [], session_id="sess_cold")[1]["content"]
+    assert "Open times" not in volatile
+
+
+def test_a_booking_stops_the_prompt_quoting_the_slot_it_just_took(config):
+    from backend.tools import calendar as cal
+
+    cal._prefetched["sess_q"] = [{"iso": "x", "human": "Monday at 10:30am"}]
+    cal.drop_prefetched("sess_q")
+    volatile = playbook.build(config, {}, [], session_id="sess_q")[1]["content"]
+    assert "Monday at 10:30am" not in volatile

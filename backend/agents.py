@@ -66,6 +66,9 @@ def sessions_for(agent_id: str) -> list[str]:
 def release(session_id: str) -> None:
     _bound.pop(session_id, None)
     _engine.pop(session_id, None)
+    _timezone.pop(session_id, None)
+    from .tools import calendar   # local: calendar imports models, not this
+    calendar.drop_prefetched(session_id)   # per-session caches the hangup has to reclaim
 
 
 def allowed_origin(origins: list[str], origin: str | None) -> bool:

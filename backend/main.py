@@ -133,6 +133,12 @@ async def start_call(req: StartCall, origin: str | None = Header(None)):
     channel = rtm.channel_for(session_id)
     agents.bind_record(session_id, req.agent_id, config, agent_secrets)
     agents.set_timezone(session_id, req.timezone)
+    # Warm the slots the prompt will carry, off the critical path: /start-call already
+    # spends seconds on Agora, and a calendar that is slow or down must not add to it or
+    # fail the call. A prompt with no slots line is exactly the old behaviour.
+    if config.tools_enabled.calendar:
+        asyncio.create_task(asyncio.to_thread(
+            tools.prefetch, agent_secrets, session_id, req.timezone or "UTC"))
 
     # A token binds the uid it was minted for, so the agent and the prospect need their
     # own. Handing the engine the prospect's token makes it fail to join with nothing but

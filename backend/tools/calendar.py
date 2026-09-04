@@ -19,6 +19,10 @@ BOOKINGS_VERSION = "2026-02-25"
 
 _booked: dict[str, dict] = {}  # session_id -> booking; one live booking per call
 SETTLE_S = 45   # a re-book inside this is the same intent, not a change of mind
+# How far check_slots reaches when the window it was asked about turns out to be empty.
+# A working week: far enough that a quiet Friday afternoon still finds something, close
+# enough that the agent is not offering a demo three weeks out to someone ready now.
+WIDEN_DAYS = 7
 
 # What a prospect actually says on a call. The model relays it verbatim, so the aliases
 # have to live on this side of the tool boundary rather than in the schema.
@@ -181,6 +185,65 @@ def check_slots(secrets: AgentSecrets, days_ahead: int = 5, timezone_name: str =
                           for s in slots[:5]],
                 "timezone": str(tz), "source": "stub"}
 
+    picked = _fetch(secrets, now, days_ahead, tz)
+    # days_ahead=0 means "today", and it makes start == end, so Cal.com has nothing to
+    # return however open the calendar is. The model's answer to an empty list is to ask
+    # again with a wider window — a whole extra LLM round trip, and the commonest slow turn
+    # in the logs (sess_ff5b turn 5 spent four hops that way). One more HTTP call is ~200ms
+    # against ~700ms for the hop it saves, so widen here and let the agent say so.
+    widened = False
+    if not picked and days_ahead < WIDEN_DAYS:
+        picked = _fetch(secrets, now, WIDEN_DAYS, tz)
+        widened = bool(picked)
+
+    out = {"slots": [{"iso": iso, "human": _human(iso, tz)} for iso in picked],
+           "timezone": str(tz), "source": "cal.com"}
+    if widened:
+        out["widened"] = True
+        out["instruction"] = ("Nothing is free in the window they asked about. Say so in "
+                              "half a sentence, then offer these instead — do not call "
+                              "check_slots again.")
+    return out
+
+
+_prefetched: dict[str, list[dict]] = {}   # session_id -> the slots the prompt is carrying
+
+
+def prefetch(secrets: AgentSecrets, session_id: str, timezone_name: str = "UTC") -> None:
+    """Warm the session's slots so the prompt can carry them and the agent need not ask.
+
+    A tool turn costs two LLM round trips at minimum — one to emit the call, one to turn
+    the result into speech — so "what times are free" was never going to come back inside
+    a second while the answer lived behind a tool. Fetched once at /start-call and put in
+    the volatile block instead, it is one hop, which is.
+
+    Blocking httpx, so call it in a thread. Failure is silent by design: the tool is still
+    there, and a prompt without a slots line is exactly today's behaviour.
+    """
+    try:
+        fresh = check_slots(secrets, days_ahead=WIDEN_DAYS, timezone_name=timezone_name)
+        _prefetched[session_id] = fresh.get("slots") or []
+    except Exception as exc:  # noqa: BLE001 — a warm cache is an optimisation, never a gate
+        print(f"[calendar] prefetch for {session_id} failed: {exc!r}")
+
+
+def prefetched(session_id: str) -> list[dict]:
+    return _prefetched.get(session_id) or []
+
+
+def drop_prefetched(session_id: str) -> None:
+    """After a booking the list has a hole in it, and at hangup it is landfill. Both want
+    the prompt to stop quoting times that are no longer true."""
+    _prefetched.pop(session_id, None)
+
+
+def _fetch(secrets: AgentSecrets, now: datetime, days_ahead: int, tz: ZoneInfo) -> list[str]:
+    """The slots Cal.com has in this window, as a spoken shortlist.
+
+    Response is {status, data: {"2026-09-01": [{"start": "..."} | "..."]}}, each day's slots
+    in order. Taken flat, the first five are five consecutive half hours of one morning,
+    which is one option read out five times. Two per day makes it a real choice.
+    """
     r = httpx.get(f"{API}/slots", headers=_headers(secrets, SLOTS_VERSION), timeout=8, params={
         "eventTypeId": secrets.calcom_event_type_id,
         "start": now.isoformat(),
@@ -188,16 +251,12 @@ def check_slots(secrets: AgentSecrets, days_ahead: int = 5, timezone_name: str =
         "timeZone": str(tz),
     })
     r.raise_for_status()
-    # Response is {status, data: {"2026-09-01": [{"start": "..."} | "..."]}}, each day's
-    # slots in order. Taken flat, the first five are five consecutive half hours of one
-    # morning, which is one option read out five times. Two per day makes it a real choice.
     per_day = [[slot["start"] if isinstance(slot, dict) else slot for slot in day]
                for day in r.json().get("data", {}).values()]
     picked = [iso for day in per_day for iso in day[:2]][:5]
     if len(picked) < 3 and per_day:
         picked = per_day[0][:5]   # only one day is open at all; offer what there is
-    return {"slots": [{"iso": iso, "human": _human(iso, tz)} for iso in picked],
-            "timezone": str(tz), "source": "cal.com"}
+    return picked
 
 
 def book_meeting(secrets: AgentSecrets, slot_iso: str, email: str, name: str | None = None,
