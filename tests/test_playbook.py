@@ -169,3 +169,21 @@ def test_a_booking_stops_the_prompt_quoting_the_slot_it_just_took(config):
     cal.drop_prefetched("sess_q")
     volatile = playbook.build(config, {}, [], session_id="sess_q")[1]["content"]
     assert "Monday at 10:30am" not in volatile
+
+
+def test_the_console_template_does_not_retype_the_voice_defaults():
+    """The new-agent template duplicated these numbers and drifted: it still held Agora's
+    0.5 / 160 / 320 / 320 — the configuration models.py records as cutting turns off twenty
+    times in thirty — long after the defaults were raised, so every console-made agent
+    started with the over-eager barge-in an operator had already reported. Nothing caught
+    it because the two live in different languages. This is that check."""
+    from pathlib import Path
+
+    page = Path("console/app/agents/[id]/page.tsx").read_text(encoding="utf-8")
+    voice = page.split("voice: {", 1)[1].split("},", 1)[0]
+
+    assert "...VOICE_DEFAULTS" in voice, "spread the shared defaults, never retype them"
+    for retyped in ("speech_threshold:", "interrupt_duration_ms:", "silence_duration_ms:",
+                    "max_wait_ms:", "filler_phrases:"):
+        assert retyped not in voice, f"{retyped} is duplicated and will drift again"
+    assert 'tts_vendor: ""' not in voice, "an empty vendor joins and then produces no speech"

@@ -11,7 +11,7 @@ import { EmbedTab, originError } from "@/components/editor/EmbedTab";
 import { IntegrationsTab, type SecretDraft } from "@/components/editor/IntegrationsTab";
 import { KnowledgeTab } from "@/components/editor/KnowledgeTab";
 import { PersonaTab } from "@/components/editor/PersonaTab";
-import { VoiceTab } from "@/components/editor/VoiceTab";
+import { DEFAULTS as VOICE_DEFAULTS, VoiceTab } from "@/components/editor/VoiceTab";
 
 /** A new agent starts from the same defaults models.py would have given it. */
 const BLANK: AgentConfig = {
@@ -35,17 +35,21 @@ const BLANK: AgentConfig = {
     escalation_triggers: ["asks for a human", "legal or security questions", "repeated frustration"],
     escalation_seat_threshold: 500,
   },
+  // Spread, never retyped. These numbers were duplicated here and drifted: this template
+  // still held Agora's 0.5 / 160 / 320 / 320 — the exact configuration models.py records
+  // as cutting turns off twenty times in thirty — long after the defaults were raised, so
+  // every agent made in the console started with the over-eager barge-in an operator had
+  // already complained about. tts_vendor "" and tts_params {} were the other half: the
+  // empty vendor the reset-button comment above describes, which joins and produces no
+  // speech. Only the fields VOICE_DEFAULTS deliberately leaves out are written here.
   voice: {
-    tts_vendor: "",
-    tts_params: {},
-    speech_threshold: 0.5,
-    interrupt_duration_ms: 160,
-    speaking_interrupt_duration_ms: 320,
-    prefix_padding_ms: 800,
-    silence_duration_ms: 320,
-    max_wait_ms: 3000,
-    interruption_enabled: true,
-    filler_phrases: ["One moment.", "Let me check that.", "Pulling that up."],
+    ...VOICE_DEFAULTS,
+    tts_vendor: "openai",
+    tts_params: {
+      url: "https://api.openai.com/v1/audio/speech",
+      model: "tts-1",
+      voice: "nova",
+    },
   },
   // A new agent starts with an empty ladder on purpose: nothing has been authorised yet,
   // so it can hold a price but has nothing to trade until an operator fills the tab in.
