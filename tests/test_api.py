@@ -409,3 +409,68 @@ def test_the_prompt_carries_the_prospects_own_clock(config):
     volatile = built[1]["content"]
     assert "Asia/Kolkata" in volatile and "where the prospect is" in volatile
     assert "UTC" in volatile, "our own clock still has to be there for the ISO slots"
+
+
+def test_saving_one_credential_does_not_wipe_the_others(operator, monkeypatch):
+    """A live operator lost Cal.com by saving HubSpot, then HubSpot by saving Cal.com, then
+    both by saving Notion. The console sends only the fields the operator touched, so every
+    absent field arrived as its default and a whole-object write erased it."""
+    from backend.models import AgentSecrets
+
+    saved = {"secrets": AgentSecrets(calcom_api_key="cal_live_KEEPME",
+                                     calcom_event_type_id="6900272")}
+
+    async def fake_get(agent_id):
+        return saved["secrets"]
+
+    async def fake_save(agent_id, secrets):
+        saved["secrets"] = secrets
+
+    monkeypatch.setattr(console.db, "get_agent", lambda agent_id: _exists())
+    monkeypatch.setattr(console.db, "get_secrets", fake_get)
+    monkeypatch.setattr(console.db, "save_secrets", fake_save)
+
+    r = operator.put("/console/agents/ag_demo/secrets", json={"hubspot_token": "pat-NEW"})
+    assert r.status_code == 200
+
+    assert saved["secrets"].hubspot_token == "pat-NEW", "the field being saved must be written"
+    assert saved["secrets"].calcom_api_key == "cal_live_KEEPME", "an untouched key was wiped"
+    assert saved["secrets"].calcom_event_type_id == "6900272"
+
+
+def test_an_explicit_null_still_clears_a_credential(operator, monkeypatch):
+    """Merging must not cost the Remove button: absent means leave alone, null means clear."""
+    from backend.models import AgentSecrets
+
+    saved = {"secrets": AgentSecrets(hubspot_token="pat-OLD", calcom_api_key="cal_live_KEEPME")}
+
+    async def fake_get(agent_id):
+        return saved["secrets"]
+
+    async def fake_save(agent_id, secrets):
+        saved["secrets"] = secrets
+
+    monkeypatch.setattr(console.db, "get_agent", lambda agent_id: _exists())
+    monkeypatch.setattr(console.db, "get_secrets", fake_get)
+    monkeypatch.setattr(console.db, "save_secrets", fake_save)
+
+    operator.put("/console/agents/ag_demo/secrets", json={"hubspot_token": None})
+    assert saved["secrets"].hubspot_token is None, "Remove must still clear the value"
+    assert saved["secrets"].calcom_api_key == "cal_live_KEEPME"
+
+
+async def _exists():
+    return {"id": "ag_demo"}
+
+
+async def _missing():
+    return None
+
+
+def test_credentials_for_an_unknown_agent_are_refused_not_silently_dropped(operator, monkeypatch):
+    """get_secrets returns an empty AgentSecrets for an id that does not exist, so the
+    merge succeeded, the UPDATE matched no rows, and the operator got a 200 and a "Stored"
+    badge for a credential that went nowhere. Its neighbours already 404; this one didn't."""
+    monkeypatch.setattr(console.db, "get_agent", lambda agent_id: _missing())
+    r = operator.put("/console/agents/ag_nosuchagent/secrets", json={"hubspot_token": "pat-X"})
+    assert r.status_code == 404

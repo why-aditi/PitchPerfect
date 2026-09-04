@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createAgent, getAgent, saveAgent, saveSecrets } from "@/lib/api";
@@ -76,6 +76,10 @@ export default function AgentEditor({ params }: { params: Promise<{ id: string }
   const [origins, setOrigins] = useState<string[]>([]);
   const [secrets, setSecrets] = useState<SecretsSet | null>(null);
   const [secretDraft, setSecretDraft] = useState<SecretDraft>({});
+  // The id a create already claimed. Saving an agent is two calls, and if the credentials
+  // half fails the operator is still on /agents/new with isNew true — pressing save again
+  // would create a second agent and orphan the first, credentials and all.
+  const createdId = useRef<string | null>(null);
   const [saved, setSaved] = useState<string>(() =>
     isNew ? fingerprint({ name: "", config: BLANK, origins: [] }) : "",
   );
@@ -180,8 +184,8 @@ export default function AgentEditor({ params }: { params: Promise<{ id: string }
     try {
       let target = id;
       if (isNew) {
-        const created = await createAgent(name, config, list);
-        target = created.id;
+        target = createdId.current ?? (await createAgent(name, config, list)).id;
+        createdId.current = target;
       } else {
         await saveAgent(id, name, config, list);
       }

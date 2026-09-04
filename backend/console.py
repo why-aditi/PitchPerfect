@@ -107,8 +107,20 @@ async def update_agent(agent_id: str, body: AgentWrite, pp_console: str | None =
 async def update_secrets(agent_id: str, body: AgentSecrets,
                          pp_console: str | None = Cookie(None)):
     require_session(pp_console)
-    await db.save_secrets(agent_id, body)
-    return body.masked()  # echo the mask, never the values just written
+    # get_secrets answers for an unknown agent with an empty AgentSecrets, so without this
+    # a typo'd id merges cleanly, updates no rows, and returns 200 — the console then shows
+    # "Stored" for a credential that reached nothing. Its neighbours already 404.
+    if await db.get_agent(agent_id) is None:
+        raise HTTPException(404, "no such agent")
+    # Merge, never replace. The console sends only the fields the operator touched, so a
+    # whole-object write lands every absent field as its default and erases it: an operator
+    # lost Cal.com by saving HubSpot, then HubSpot by saving Cal.com. exclude_unset keeps
+    # the distinction the UI depends on — absent means leave alone, an explicit null is the
+    # Remove button and still clears. Same merge seed.py:58 uses for env-supplied secrets.
+    merged = (await db.get_secrets(agent_id)).model_copy(
+        update=body.model_dump(exclude_unset=True))
+    await db.save_secrets(agent_id, merged)
+    return merged.masked()  # echo the mask, never the values just written
 
 
 @router.post("/agents/{agent_id}/import-tiers")
