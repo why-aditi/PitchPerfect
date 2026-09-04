@@ -219,3 +219,41 @@ def test_the_notion_token_is_masked_but_the_database_ids_are_not():
     assert masked["notion_token"] == "set"
     assert masked["notion_leads_db"] == "db_leads"
     assert AgentSecrets().masked()["notion_token"] is None
+
+
+def test_the_row_is_labelled_with_the_person_not_the_company(sent):
+    """An operator reads the title column down the page to decide who to call back, and a
+    list of company names does not tell them who that is. The prospect's name had nowhere
+    to live until now: it was an argument to book_meeting and was discarded after."""
+    notion.upsert_lead(CONNECTED, dict(LEAD, name="Keshav"))
+    props = sent[0][2]["properties"]
+    assert props["Name"]["title"][0]["text"]["content"] == "Keshav"
+
+
+def test_a_lead_with_no_name_yet_still_gets_a_labelled_row(sent):
+    """Names arrive mid-call, and a row that appears before one does must not be blank."""
+    notion.upsert_lead(CONNECTED, dict(LEAD))
+    assert sent[0][2]["properties"]["Name"]["title"][0]["text"]["content"] == "Acme"
+
+
+def test_the_booking_writes_the_time_whatever_the_operator_called_the_column(sent):
+    """Demo, Date and Date Time are the same column to an operator. Only the ones that
+    exist are written, so this costs nothing on a database that has just one of them."""
+    for column in ("Demo", "Date", "Date Time"):
+        notion._pages.clear()
+        notion._schemas["db_leads"] = ("ds_leads", {"Name": "title", column: "date"})
+        sent.clear()
+        notion.log_booking(CONNECTED, dict(LEAD, name="Keshav"),
+                           {"booking_id": "b1", "slot_iso": "2026-09-10T10:00:00+00:00",
+                            "email": "ops@acme.test", "name": "Keshav"})
+        props = sent[0][2]["properties"]
+        assert props[column]["date"]["start"].startswith("2026-09-10"), column
+
+
+def test_purpose_is_written_from_the_use_case_already_captured(sent):
+    """Purpose is what an operator calls the column; use_case is what the state calls the
+    field. Aliasing beats asking the model to record the same thing twice."""
+    notion._schemas["db_leads"] = ("ds_leads", {"Name": "title", "Purpose": "rich_text"})
+    notion.upsert_lead(CONNECTED, dict(LEAD, use_case="onboarding"))
+    props = sent[0][2]["properties"]
+    assert props["Purpose"]["rich_text"][0]["text"]["content"] == "onboarding"

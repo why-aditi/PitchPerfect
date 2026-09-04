@@ -7,7 +7,7 @@ from backend import state
 def test_new_state_has_every_documented_field():
     s = state.new_state("sess_a")
     assert set(s) == {
-        "session_id", "company", "email", "industry", "use_case", "seat_count",
+        "session_id", "name", "company", "email", "industry", "use_case", "seat_count",
         "budget_signal", "timeline", "objections_raised", "competitor_mentions",
         "concessions_offered", "bant", "qualification", "next_action", "notes",
     }

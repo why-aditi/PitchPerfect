@@ -112,6 +112,7 @@ LEAD_STATE_SPEC = _nullable(
     {"name": "update_lead_state",
      "description": "Record anything learned about the prospect. Merges.",
      "parameters": {"type": "object", "properties": {
+         "name": {"type": "string", "description": "the prospect's own name"},
          "company": {"type": "string"}, "email": {"type": "string"},
          "industry": {"type": "string"}, "use_case": {"type": "string"},
          "seat_count": {"type": "integer"},

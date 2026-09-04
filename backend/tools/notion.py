@@ -168,9 +168,16 @@ def upsert_lead(secrets: AgentSecrets, lead: dict) -> None:
     objections = ", ".join(lead["objections_raised"]) or "none"
     competitors = ", ".join(lead["competitor_mentions"]) or "none"
     _write(secrets, secrets.notion_leads_db, {
-        "name": lead.get("company") or lead.get("email") or lead["session_id"],
+        # The person first: the title column is what an operator reads down the page, and
+        # a list of company names does not tell them who to call back. Company, then the
+        # email, then the session are the fallbacks, so the row is never left unlabelled.
+        "name": (lead.get("name") or lead.get("company") or lead.get("email")
+                 or lead["session_id"]),
         "email": lead.get("email"),
         "company": lead.get("company"),
+        # Same value as use case, under the name an operator is more likely to have given
+        # the column. Whichever of the two exists is written; neither is invented.
+        "purpose": lead.get("use_case"),
         "seats": lead.get("seat_count"),
         "qualification": lead["qualification"],
         "use case": lead.get("use_case"),
@@ -187,9 +194,16 @@ def log_booking(secrets: AgentSecrets, lead: dict, booking: dict) -> None:
     if not (secrets.notion_token and secrets.notion_leads_db):
         return
     _write(secrets, secrets.notion_leads_db, {
-        "name": lead.get("company") or booking.get("email"),
+        "name": (booking.get("name") or lead.get("name") or lead.get("company")
+                 or booking.get("email")),
         "email": booking.get("email") or lead.get("email"),
+        # One value, three column names an operator might have used. Only the columns that
+        # exist are written, so this costs nothing on a database that has one of them and
+        # spares a rename on a database that has another.
         "demo": booking.get("slot_iso"),
+        "date": booking.get("slot_iso"),
+        "date time": booking.get("slot_iso"),
+        "purpose": lead.get("use_case"),
         "booking id": booking.get("booking_id"),
         "qualification": lead["qualification"],
     }, page_key=lead["session_id"])

@@ -25,7 +25,7 @@ log = logging.getLogger("pitchpilot.extract")
 
 INSTRUCTIONS = """You maintain the CRM record for a live sales call. You are given the lead
 state recorded so far and the latest turns of the transcript. Call update_lead_state with
-only what is NEW or CHANGED in these turns: company, email, industry, use case, seat
+only what is NEW or CHANGED in these turns: name, company, email, industry, use case, seat
 count, budget signal, timeline, objections, competitors named, BANT scores (0-3 each),
 notes. Leave out anything already recorded and unchanged. Never invent a value; if the
 prospect did not say it, leave it out. An email is only an email if the prospect said

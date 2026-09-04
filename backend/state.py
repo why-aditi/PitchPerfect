@@ -25,6 +25,10 @@ def _as_int(value) -> int | None:
 def new_state(session_id: str) -> dict:
     return {
         "session_id": session_id,
+        # Who we are actually talking to. It lived only as an argument to book_meeting and
+        # was thrown away after, which is why a HubSpot contact came back with firstname
+        # null and a Notion row could not be labelled with anything but a company.
+        "name": None,
         "company": None,
         "email": None,
         "industry": None,

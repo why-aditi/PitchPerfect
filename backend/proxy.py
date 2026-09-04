@@ -309,7 +309,11 @@ def _dispatch(sid: str, name: str, args: dict, history: list[dict]) -> dict:
         # would put a second meeting on the console and a duplicate deal in the CRM.
         settled = result.get("already_booked") or "rescheduled_from" in result
         if "error" not in result and not settled:
-            lead = state.update(sid, next_action="book_demo", email=result.get("email"))
+            # The name the invite went out under is the name we have. Recording it here is
+            # the only place it is certain — the extractor may not have heard it yet, and
+            # after this the booking dict is gone.
+            lead = state.update(sid, next_action="book_demo", email=result.get("email"),
+                                name=result.get("name"))
             # One of the times the prompt is carrying has just been taken. Dropping the
             # list is cheaper than refreshing it and safer than leaving it: the agent falls
             # back to check_slots, which is correct by construction.
