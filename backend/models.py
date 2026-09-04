@@ -125,8 +125,11 @@ class Voice(BaseModel):
     # email address, pauses longer than that. And max_wait is the harder of the two: it is
     # a hard cap that makes the agent reply even when end-of-turn is ambiguous, so at 3s it
     # was barging in on any sentence that took longer than three seconds to say. Tune per
-    # deployment — a noisy line wants more, a brisk one less.
-    silence_duration_ms: int = 700
+    # deployment — a noisy line wants more, a brisk one less. Cut 700 → 550 on request:
+    # this sits on every turn, so it is the honest lever for "slow to reply". 480 is the
+    # known floor — below that it clipped people saying an email address aloud — so 550
+    # keeps a 70ms margin over a failure we have actually seen.
+    silence_duration_ms: int = 550
     # 5000 was the hard cap on the slowest turns of a live call (asr_ttlw 5065ms twice):
     # every ambiguous end-of-sentence cost five seconds before the LLM was even asked.
     # Agora's default is 3000, and semantic detection usually settles long before it.
@@ -168,10 +171,17 @@ class AgentConfig(BaseModel):
     # turns it was the only one to record the lead as it went (4 update_lead_state calls,
     # reaching warm) rather than arriving at the booking with an empty panel. mistral-large
     # is a 403 here, and ministral-8b looped itself into a spurious escalation.
-    llm_model: str = "mistral-medium-latest"
+    # Groq, not Mistral: the Mistral key went to zero quota (429 with
+    # x-ratelimit-limit-req-minute: 0) on 2026-09-04. These defaults have to match whatever
+    # LLM_URL points at in .env, because a config saved by the console without an explicit
+    # value silently lands here — which is how a live call ended up asking Groq for
+    # mistral-medium-latest and getting a 404 on every turn.
+    llm_model: str = "openai/gpt-oss-20b"
     # The lead extractor (extract.py) runs beside the reply, so it can be the smaller and
-    # faster model: it only has to fill a form from six turns of transcript.
-    extract_model: str = "mistral-small-latest"
+    # faster model: it only has to fill a form from six turns of transcript. Same model for
+    # now — Groq's free tier is one 8000 TPM bucket shared across both, so a second model
+    # buys nothing here.
+    extract_model: str = "openai/gpt-oss-20b"
 
 
 class AgentSecrets(BaseModel):

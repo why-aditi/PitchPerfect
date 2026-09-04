@@ -44,7 +44,7 @@ export const DEFAULTS: Pick<
   interrupt_duration_ms: 300,
   speaking_interrupt_duration_ms: 500,
   prefix_padding_ms: 800,
-  silence_duration_ms: 700,
+  silence_duration_ms: 550,
   max_wait_ms: 3000,
   interruption_enabled: true,
   filler_phrases: ["Right.", "Let me look.", "Sure."],

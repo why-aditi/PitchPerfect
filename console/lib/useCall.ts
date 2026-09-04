@@ -104,6 +104,14 @@ export function useCall(mode: CallMode): Call {
     setTranscript([]);
     setState("connecting");
 
+    // Stage marks, because "it takes twelve seconds" is not something the server log can
+    // answer: /start-call reports its own 5.7s and the rest is out here. Kept in the
+    // shipped build rather than behind a dev flag — the slow press is the first one on a
+    // cold machine, which is exactly the one nobody has a profiler attached to.
+    const t0 = performance.now();
+    const at: Record<string, number> = {};
+    const mark = (name: string) => { at[name] = Math.round(performance.now() - t0); };
+
     // Held outside the try so a failure between opening the device and publishing it can
     // still close it. Without this an overlapped mic outlives a failed join and the
     // browser keeps showing the recording indicator for a call that never happened.
@@ -120,11 +128,13 @@ export function useCall(mode: CallMode): Call {
         ? startCall(current.agentId, current.pageContext, current.pageOrigin)
         : observeChannel(current.agentId, current.channel));
       setSession(s);
+      mark("startCall");
 
       const AgoraRTC = (await sdk).default;
       AgoraRTC.setLogLevel(3); // warnings and errors only; the SDK is chatty at info
       const c = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
       client.current = c;
+      mark("sdk");
 
       c.on("user-published", async (user: IAgoraRTCRemoteUser, media) => {
         await c.subscribe(user, media);
@@ -174,12 +184,15 @@ export function useCall(mode: CallMode): Call {
       opening = wantsMic ? AgoraRTC.createMicrophoneAudioTrack() : null;
 
       await c.join(s.app_id, s.channel, s.rtc_token, Number(s.uid));
+      mark("join");
 
       if (opening) {
         mic.current = await opening;
         opening = null;
         await c.publish([mic.current]);
       }
+      mark("mic");
+      console.info("[call] connect ms", at);
       setState("listening");
     } catch (e) {
       // Whichever of the two got as far as opening the device has to give it back.
