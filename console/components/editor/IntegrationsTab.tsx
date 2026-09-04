@@ -236,17 +236,6 @@ export function IntegrationsTab({
                 className="font-mono"
               />
             </Field>
-            <Field
-              label="Pricing database id"
-              hint="Read on demand from the Knowledge tab. Never read during a call."
-            >
-              <Input
-                value={plain("notion_pricing_db")}
-                onChange={(e) => onDraft("notion_pricing_db", e.target.value)}
-                placeholder="from the database URL"
-                className="font-mono"
-              />
-            </Field>
           </div>
           <Hint>
             Notion shows a database to an integration only once it has been shared with it —

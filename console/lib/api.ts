@@ -1,4 +1,4 @@
-import type { Agent, AgentConfig, AgentSummary, CallRecord, SecretsSet, Session, Tier } from "./types";
+import type { Agent, AgentConfig, AgentSummary, CallRecord, SecretsSet, Session } from "./types";
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`/api${path}`, {
@@ -71,12 +71,6 @@ export const saveSecrets = (id: string, secrets: Record<string, string | null>) 
   call<SecretsSet>(`/console/agents/${id}/secrets`, {
     method: "PUT",
     body: JSON.stringify(secrets),
-  });
-
-/** Reads the agent's Notion pricing database. Returns a proposal — saving is still the save button. */
-export const importTiers = (id: string) =>
-  call<{ tiers: Tier[]; note: string | null }>(`/console/agents/${id}/import-tiers`, {
-    method: "POST",
   });
 
 export const listCalls = (id: string) => call<CallRecord[]>(`/console/agents/${id}/calls`);

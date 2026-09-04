@@ -21,8 +21,7 @@ FULL_SCHEMA = {
     "Qualification": "select", "Notes": "rich_text", "Demo": "date",
 }
 
-CONNECTED = AgentSecrets(notion_token="ntn_TESTVALUE", notion_leads_db="db_leads",
-                         notion_pricing_db="db_pricing")
+CONNECTED = AgentSecrets(notion_token="ntn_TESTVALUE", notion_leads_db="db_leads")
 
 
 @pytest.fixture
@@ -53,7 +52,7 @@ def test_nothing_is_written_without_a_database(secrets, monkeypatch):
 def test_a_token_without_a_leads_database_still_writes_nothing(monkeypatch):
     """Pricing-only is a real setup: import tiers from Notion, keep the CRM in HubSpot."""
     monkeypatch.setattr(notion, "_call", lambda *a, **k: pytest.fail("reached the network"))
-    notion.upsert_lead(AgentSecrets(notion_token="ntn_TESTVALUE", notion_pricing_db="db_p"),
+    notion.upsert_lead(AgentSecrets(notion_token="ntn_TESTVALUE"),
                        dict(LEAD))
 
 
@@ -132,83 +131,6 @@ def test_the_crm_write_still_reaches_notion_without_a_hubspot_token(monkeypatch)
     monkeypatch.setattr(notion, "upsert_lead", lambda s, lead: reached.append(lead))
     crm.sync_contact(CONNECTED, dict(LEAD), force=True)
     assert reached, "Notion was skipped because HubSpot had no token"
-
-
-# --- reading the pricing in -------------------------------------------------------------
-
-def _row(**props):
-    return {"properties": props}
-
-
-def _title(value):
-    return {"type": "title", "title": [{"plain_text": value}]}
-
-
-def _number(value):
-    return {"type": "number", "number": value}
-
-
-@pytest.fixture
-def pricing(monkeypatch):
-    """Resolve db_pricing locally; the caller supplies the rows the query returns."""
-    notion._schemas.clear()
-    notion._schemas["db_pricing"] = ("ds_pricing", {})
-    rows: list[dict] = []
-
-    def fake(secrets, method, path, payload=None):
-        return {"results": rows} if path.endswith("/query") else {}
-
-    monkeypatch.setattr(notion, "_call", fake)
-    return rows
-
-
-def test_tiers_import_and_sort_by_the_band_they_start_at(pricing):
-    pricing.extend([
-        _row(Name=_title("Enterprise"), **{"Per seat month": _number(32),
-                                           "Min seats": _number(101)}),
-        _row(Name=_title("Team"), **{"Per seat month": _number(39), "Min seats": _number(1),
-                                     "Max seats": _number(100),
-                                     "Features": {"type": "multi_select",
-                                                  "multi_select": [{"name": "SSO"}]}}),
-    ])
-    tiers, note = notion.fetch_tiers(CONNECTED)
-
-    assert [t.name for t in tiers] == ["Team", "Enterprise"], "bands must read in order"
-    assert (tiers[0].per_seat_month, tiers[0].max_seats) == (39.0, 100)
-    assert tiers[0].features == ["SSO"]
-    assert tiers[1].max_seats is None, "an open top band stays open"
-    assert note is None
-
-
-def test_a_pricing_table_headed_something_other_than_name_still_imports(pricing):
-    pricing.append(_row(Plan=_title("Growth"), **{"Per seat month": _number(25)}))
-    tiers, _ = notion.fetch_tiers(CONNECTED)
-    assert [t.name for t in tiers] == ["Growth"]
-
-
-def test_a_row_with_no_price_is_skipped_rather_than_imported_as_zero(pricing):
-    """A tier with no number would have the agent quote a blank on a live call."""
-    pricing.extend([
-        _row(Name=_title("Team"), **{"Per seat month": _number(39)}),
-        _row(Name=_title("Custom"), **{"Per seat month": {"type": "number", "number": None}}),
-    ])
-    tiers, note = notion.fetch_tiers(CONNECTED)
-    assert [t.name for t in tiers] == ["Team"]
-    assert "1 row(s) skipped" in note
-
-
-def test_an_unusable_database_reports_why_instead_of_importing_nothing(pricing):
-    pricing.append(_row(Notes={"type": "rich_text", "rich_text": [{"plain_text": "tbd"}]}))
-    tiers, note = notion.fetch_tiers(CONNECTED)
-    assert tiers == []
-    assert "Per seat month" in note
-
-
-def test_importing_without_a_pricing_database_says_so(secrets):
-    tiers, note = notion.fetch_tiers(secrets)
-    assert tiers == [] and "No Notion token" in note
-    tiers, note = notion.fetch_tiers(AgentSecrets(notion_token="ntn_TESTVALUE"))
-    assert tiers == [] and "pricing database" in note
 
 
 # --- secrets stay write-only ------------------------------------------------------------

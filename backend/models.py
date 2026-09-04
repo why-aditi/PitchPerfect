@@ -232,7 +232,6 @@ class AgentSecrets(BaseModel):
     # source inside the database; tools/notion.py resolves that, so an operator never
     # has to find an id that no page in the Notion UI shows them.
     notion_leads_db: str | None = None
-    notion_pricing_db: str | None = None
 
     SECRET_FIELDS: ClassVar[tuple[str, ...]] = ("calcom_api_key", "hubspot_token",
                                                 "slack_webhook_url", "notion_token")

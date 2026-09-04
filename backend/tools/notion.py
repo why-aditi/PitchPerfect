@@ -1,13 +1,14 @@
-"""Notion, in both directions: leads out during a call, pricing in at config time.
+"""Leads mirrored out to Notion during a call. One direction only.
 
-**Out.** The same lead HubSpot gets, mirrored into a Notion database, for a team whose
-pipeline lives in Notion rather than a CRM. Fire-and-forget under exactly the rule
-crm.py sets: every error here is logged and swallowed, because a Notion outage must
-never break a live call.
+The same lead HubSpot gets, written into a Notion database, for a team whose pipeline
+lives in Notion rather than a CRM. Fire-and-forget under exactly the rule crm.py sets:
+every error here is logged and swallowed, because a Notion outage must never break a
+live call.
 
-**In.** Pricing tiers read from a Notion database and written into the agent's config,
-never read at call time. `get_pricing` keeps reading `config.knowledge.tiers` out of
-Postgres like it always has, so nothing in this module is on the audio path.
+Pricing used to be read back the other way, from a Notion database into the agent's
+config. It was removed: the knowledge base was always the source of truth — get_pricing
+reads config.knowledge.tiers and never touched Notion — and the import could not carry
+volume_break, so it offered strictly less than what an operator had already configured.
 
 Notion's schema is the operator's, not ours. Rather than demand a column layout, the
 data source schema is fetched once and writes are filtered down to the columns that
@@ -17,7 +18,7 @@ import re
 
 import httpx
 
-from ..models import AgentSecrets, Tier
+from ..models import AgentSecrets
 
 API = "https://api.notion.com/v1"
 # Notion is date-versioned and the header is mandatory. Every shape below is written
@@ -207,68 +208,3 @@ def log_booking(secrets: AgentSecrets, lead: dict, booking: dict) -> None:
         "booking id": booking.get("booking_id"),
         "qualification": lead["qualification"],
     }, page_key=lead["session_id"])
-
-
-def _plain(prop: dict):
-    """One Notion property value back to a Python value."""
-    kind = prop.get("type")
-    if kind in ("title", "rich_text"):
-        return "".join(part.get("plain_text", "") for part in prop.get(kind) or []).strip()
-    if kind == "number":
-        return prop.get("number")
-    if kind == "select":
-        return (prop.get("select") or {}).get("name")
-    if kind == "multi_select":
-        return [item["name"] for item in prop.get("multi_select") or []]
-    if kind == "formula":
-        inner = prop.get("formula") or {}
-        return inner.get(inner.get("type", ""))
-    return None
-
-
-def fetch_tiers(secrets: AgentSecrets) -> tuple[list[Tier], str | None]:
-    """Read the pricing database into tiers. Returns (tiers, error).
-
-    Config-time only. A row missing a name or a per-seat price is skipped rather than
-    imported as a tier that would quote a blank or a zero on a live call.
-    """
-    if not secrets.notion_token:
-        return [], "No Notion token stored for this agent."
-    if not secrets.notion_pricing_db:
-        return [], "No Notion pricing database id stored for this agent."
-
-    resolved = _schema(secrets, secrets.notion_pricing_db)
-    if resolved is None:
-        return [], "Could not read that database. Check the id and that the integration is shared with it."
-
-    rows = _call(secrets, "POST", f"data_sources/{resolved[0]}/query", {"page_size": 100})
-    if rows is None:
-        return [], "Notion rejected the query. Check the integration's access to that database."
-
-    tiers, skipped = [], 0
-    for page in rows.get("results") or []:
-        props = page.get("properties") or {}
-        got = {_key(name): _plain(prop) for name, prop in props.items()}
-        # Same rule as the write path: whichever column Notion marks as the title is the
-        # tier's name, so a table headed "Plan" imports without being renamed.
-        title = next((_plain(p) for p in props.values() if p.get("type") == "title"), None)
-        name, per_seat = title or got.get("name") or got.get("tier"), got.get("perseatmonth")
-        if not name or not isinstance(per_seat, (int, float)):
-            skipped += 1
-            continue
-        features = got.get("features") or []
-        tiers.append(Tier(
-            name=name,
-            per_seat_month=float(per_seat),
-            min_seats=int(got.get("minseats") or 1),
-            max_seats=int(got["maxseats"]) if isinstance(got.get("maxseats"), (int, float)) else None,
-            # ponytail: volume_break is a nested shape with no clean single-column form,
-            # so it is left to the console editor. Import the bands, tune the break there.
-            features=features if isinstance(features, list) else [features],
-        ))
-
-    tiers.sort(key=lambda t: t.min_seats)
-    if not tiers:
-        return [], ("No usable rows. Each tier needs a title and a number column named "
-                    "\"Per seat month\".")
-    return tiers, (f"{skipped} row(s) skipped for a missing name or price." if skipped else None)
