@@ -69,6 +69,9 @@ def _human(iso: str, tz: ZoneInfo) -> str:
 _SPOKEN = [(" at ", "@"), (" dot ", "."), (" underscore ", "_"), (" dash ", "-"),
            (" hyphen ", "-"), (" plus ", "+")]
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[a-z]{2,}$")
+# Punctuation ASR sprinkles through a dictated address. Never legal in an unquoted one,
+# so removing it can only ever recover an address, never invent one.
+_NOISE = str.maketrans("", "", " ,;:!?")
 
 
 def normalise_email(raw: str) -> str:
@@ -77,7 +80,10 @@ def normalise_email(raw: str) -> str:
     if "@" not in email:
         for word, symbol in _SPOKEN:
             email = email.replace(word, symbol)
-    return email.replace(" ", "")
+    # ASR punctuates speech, and a comma lands inside the address: "EHS Raka, at
+    # gmail.com" became "ehsraka,@gmail.com", which _EMAIL accepts (a comma is neither @
+    # nor whitespace) and HubSpot rejects with a 400.
+    return email.translate(_NOISE)
 
 
 def clean_email(raw: str) -> str | None:
@@ -108,7 +114,19 @@ def was_actually_said(email: str, history: list[dict]) -> bool:
     against what was actually said rather than against the shape of the string.
     """
     said = " ".join(m.get("content") or "" for m in history if m.get("role") == "user")
-    return email.lower() in spoken_haystack(said)
+    return _comparable(email) in _comparable(spoken_haystack(said))
+
+
+def _comparable(text: str) -> str:
+    """Both sides of the guard flattened identically, or it refuses real addresses.
+
+    A live call was refused a booking three times: ASR heard "keshavsharma1441. @gmail.com."
+    and the model offered the cleaned address, so the stray dot sat in the haystack and not
+    in the needle. Dots go too — "dana dot reyes at gmail dot com" still matches
+    dana.reyes@gmail.com either way, and an address nobody said still has nothing to match
+    against, which is the only thing this guard is for.
+    """
+    return text.lower().translate(_NOISE).replace(".", "")
 
 
 def _api_error(exc: httpx.HTTPStatusError) -> dict:

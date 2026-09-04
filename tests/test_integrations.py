@@ -15,7 +15,8 @@ from backend.tools import SPECS
 from backend.tools import calendar as cal
 from backend.tools import calendar as cal
 from backend.tools.calendar import (
-    _api_error, book_meeting, cancel_meeting, check_slots, clean_email)
+    _api_error, book_meeting, cancel_meeting, check_slots, clean_email,
+    was_actually_said)
 from backend.tools.escalation import escalate_to_human, summarise
 
 LEAD = {
@@ -353,3 +354,33 @@ def test_a_cancelled_meeting_is_forgotten_so_the_call_can_rebook(secrets):
     again = book_meeting(secrets, "2026-09-30T10:00:00+00:00", "a@b.test",
                          name="Dana Reyes", session_id="s")
     assert not again.get("already_booked") and again["slot_iso"] == "2026-09-30T10:00:00+00:00"
+
+
+def test_speech_punctuation_is_not_part_of_the_address():
+    """A live call turned "EHS Raka, at gmail.com" into "ehsraka,@gmail.com" — well-formed
+    enough for the guard, and rejected by HubSpot with a 400 once it reached the CRM."""
+    assert clean_email("EHS Raka, at gmail.com") == "ehsraka@gmail.com"
+    assert clean_email("dana, at gmail dot com") == "dana@gmail.com"
+
+
+def test_a_real_address_survives_the_punctuation_asr_adds():
+    """A live call: ASR wrote "keshavsharma1441. @gmail.com.", the model supplied the
+    cleaned address, and the guard refused the booking three times because the stray dot
+    was in the haystack but not in the needle. Both sides have to flatten the same way."""
+    said = [{"role": "user", "content": "keshavsharma1441. @gmail.com."}]
+    assert was_actually_said("keshavsharma1441@gmail.com", said)
+
+    spelled = [{"role": "user", "content": "dana dot reyes at gmail dot com"}]
+    assert was_actually_said("dana.reyes@gmail.com", spelled)
+
+    comma = [{"role": "user", "content": "EHS Raka, at gmail.com"}]
+    assert was_actually_said("ehsraka@gmail.com", comma)
+
+
+def test_an_invented_address_is_still_refused():
+    """The guard exists because a model will supply a plausible address it never heard —
+    a test call with no email spoken produced a real Cal.com booking. Flattening
+    punctuation must not open that back up."""
+    said = [{"role": "user", "content": "no I would rather not give that out"}]
+    assert not was_actually_said("keshav@gmail.com", said)
+    assert not was_actually_said("dana.reyes@gmail.com", said)
