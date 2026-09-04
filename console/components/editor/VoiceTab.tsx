@@ -42,7 +42,7 @@ export const DEFAULTS: Pick<
 > = {
   speech_threshold: 0.6,
   interrupt_duration_ms: 300,
-  speaking_interrupt_duration_ms: 500,
+  speaking_interrupt_duration_ms: 700,
   prefix_padding_ms: 800,
   silence_duration_ms: 550,
   max_wait_ms: 3000,

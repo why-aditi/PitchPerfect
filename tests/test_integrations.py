@@ -200,7 +200,7 @@ def test_config_survives_a_jsonb_round_trip(config):
 
 def test_a_new_agent_gets_working_defaults():
     cfg = AgentConfig(persona=Persona(identity="Sells things."))
-    assert cfg.voice.speaking_interrupt_duration_ms == 500
+    assert cfg.voice.speaking_interrupt_duration_ms == 700
     assert cfg.tools_enabled.crm is True
     assert set(cfg.persona.objection_strategies) == {"pricing", "trust", "product", "competitor"}
 

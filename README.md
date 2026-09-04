@@ -122,7 +122,7 @@ handshake per hop measured ~0.5s.
 **Nothing on the spoken side says "one moment" any more.** The engine's
 `failure_message`, the proxy's fallback line and the filler phrases all used to, so
 every failure mode sounded like the agent asking the prospect to wait. Fillers now fire
-only after `filler_wait_ms` (1800ms, i.e. a tool hop) and say "Right." / "Let me look.";
+only after `filler_wait_ms` (1400ms, i.e. a tool hop) and say "Right." / "Let me look.";
 a failed turn asks the prospect to say it again.
 
 **Secrets.** Per-agent Cal.com, HubSpot and Slack credentials live in the database, are

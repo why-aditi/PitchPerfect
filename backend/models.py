@@ -111,14 +111,28 @@ class Voice(BaseModel):
     # url is required by the engine even under managed credentials, and it validates the
     # value: only the vendor's real speech endpoint is accepted for the current SKU.
     tts_params: dict = Field(default_factory=lambda: {
-        "url": "https://api.openai.com/v1/audio/speech", "model": "tts-1", "voice": "coral"})
+        # nova on request: coral read as too flat on a live call. Changing this default
+        # only reaches new agents — an existing one carries its own copy in the config
+        # column and has to be changed on the Voice tab.
+        "url": "https://api.openai.com/v1/audio/speech", "model": "tts-1", "voice": "nova"})
     # Raised from Agora's 0.5 / 160 / 320 after a call whose turns were cut at 0ms of
     # playback by "start_of_speech" twenty times in thirty: interrupt_duration_ms is the
     # only guard while the agent is still thinking, and at 160ms a breath or a keyboard
     # clears it. Agora's own guidance for noisy lines is 300-500 / 0.6-0.7.
     speech_threshold: float = 0.6
     interrupt_duration_ms: int = 300
-    speaking_interrupt_duration_ms: int = 500   # raise this if "mm-hmm" cuts the agent off
+    # 500 -> 700 after the operator reported the agent being cut off mid-sentence on live
+    # calls. This is the only knob that fires while the agent is already speaking, so it is
+    # the one lever for over-eager barge-in that costs nothing anywhere else: it is not
+    # consulted at end-of-turn, so raising it cannot make the agent slower to reply. An
+    # interruption now needs ~700ms of continuous speech — two or three words — while a
+    # backchannel "mm-hmm" or "right" no longer stops playback. Ceiling is about 900ms:
+    # past that someone who genuinely wants the floor has to talk over the agent for a full
+    # second, which reads as the agent ignoring them. speech_threshold and
+    # interrupt_duration_ms deliberately stay put — both are shared with start-of-turn
+    # detection, so raising either to calm barge-in also makes the agent slower to notice
+    # the prospect has started, which is the opposite of the second complaint.
+    speaking_interrupt_duration_ms: int = 700   # raise this if "mm-hmm" cuts the agent off
     prefix_padding_ms: int = 800
     # Both raised after a live call where the agent talked over the prospect repeatedly.
     # 480ms still cut people off mid-thought — someone counting seats aloud, or saying an
@@ -129,10 +143,23 @@ class Voice(BaseModel):
     # this sits on every turn, so it is the honest lever for "slow to reply". 480 is the
     # known floor — below that it clipped people saying an email address aloud — so 550
     # keeps a 70ms margin over a failure we have actually seen.
+    # Left at 550 when the operator next asked for a shorter gap before the agent replies.
+    # The [turn]/[hops] lines for sess_303d and sess_ff5b say that gap is not endpointing:
+    # a turn the model answers straight from text reaches first token in 250-1100ms, and
+    # every turn that costs seconds is tool hops, with ttft almost exactly the sum of them
+    # (sess_303d turn 9, ttft 7431ms against hops 2751 + 4590; sess_ff5b turn 6, ttft
+    # 2122ms against 702 + 603 + 841). Endpointing is ~550ms of a 2-7s wait, so going to
+    # the 480 floor buys 70ms and spends the entire margin over a clip we have already
+    # shipped once. filler_wait_ms is the honest lever for "slow to reply" now.
     silence_duration_ms: int = 550
     # 5000 was the hard cap on the slowest turns of a live call (asr_ttlw 5065ms twice):
     # every ambiguous end-of-sentence cost five seconds before the LLM was even asked.
     # Agora's default is 3000, and semantic detection usually settles long before it.
+    # Stays at 3000 under the same "slow to reply" complaint. It is a cap on an ambiguous
+    # end-of-turn, not a cost paid on every turn — the slow turns in the logs above all
+    # ended cleanly on silence and never reached it — so lowering it would not shorten a
+    # single one of them, and it would put back the barging-in on any sentence that takes
+    # longer than three seconds to say, which is the over-eager barge-in complaint again.
     max_wait_ms: int = 3000
     interruption_enabled: bool = True
     # These play only when the LLM has produced nothing for filler_wait_ms, which after
@@ -140,7 +167,15 @@ class Voice(BaseModel):
     # than "one moment": a prospect who is told to wait on every turn hears a broken
     # agent, which is exactly what one live call sounded like.
     filler_phrases: list[str] = ["Right.", "Let me look.", "Sure."]
-    filler_wait_ms: int = 1800
+    # 1800 -> 1400 for the operator's "too long between the prospect finishing and the
+    # agent starting". The wait is LLM and tool time, not VAD (see silence_duration_ms),
+    # so this is the only knob that changes what the prospect hears during it. At 1800 the
+    # filler landed on top of the reply on the common two-hop turn — sess_ff5b turn 2 came
+    # back at ttft 1998ms, i.e. 1.8s of dead air and then "Right." colliding with the real
+    # sentence. 1400 gets the acknowledgement out while the wait is still happening. 1200
+    # is the floor: ordinary text-only turns answer in 250-1100ms, and firing on those is
+    # how the agent starts sounding like it is stalling on every turn.
+    filler_wait_ms: int = 1400
 
 
 class ToolsEnabled(BaseModel):
