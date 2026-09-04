@@ -75,6 +75,7 @@ PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
 CONSOLE_URL = os.getenv("CONSOLE_URL", "http://localhost:3001")
 SESSIONS: dict[str, dict] = {}
 AGENT_UID, PROSPECT_UID = "1001", "1002"
+_prefetching: set[asyncio.Task] = set()   # strong refs, so the warm-up survives to run
 
 
 class StartCall(BaseModel):
@@ -137,8 +138,14 @@ async def start_call(req: StartCall, origin: str | None = Header(None)):
     # spends seconds on Agora, and a calendar that is slow or down must not add to it or
     # fail the call. A prompt with no slots line is exactly the old behaviour.
     if config.tools_enabled.calendar:
-        asyncio.create_task(asyncio.to_thread(
+        # The set is not decoration: asyncio holds only a weak reference to a running task,
+        # so a fire-and-forget one with no other referent can be collected mid-flight and
+        # the prefetch simply never happens. Every other create_task in this file keeps a
+        # name for the same reason.
+        warm = asyncio.create_task(asyncio.to_thread(
             tools.prefetch, agent_secrets, session_id, req.timezone or "UTC"))
+        _prefetching.add(warm)
+        warm.add_done_callback(_prefetching.discard)
 
     # A token binds the uid it was minted for, so the agent and the prospect need their
     # own. Handing the engine the prospect's token makes it fail to join with nothing but

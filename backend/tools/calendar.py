@@ -4,6 +4,7 @@ times, so a missing integration degrades to a logged outcome rather than a broke
 The two endpoints take DIFFERENT cal-api-version headers. Sending the wrong one silently
 gets you an older endpoint shape rather than an error.
 """
+import logging
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -12,6 +13,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx
 
 from ..models import AgentSecrets
+
+log = logging.getLogger("pitchpilot.calendar")
 
 API = "https://api.cal.com/v2"
 SLOTS_VERSION = "2024-09-04"
@@ -220,11 +223,18 @@ def prefetch(secrets: AgentSecrets, session_id: str, timezone_name: str = "UTC")
     Blocking httpx, so call it in a thread. Failure is silent by design: the tool is still
     there, and a prompt without a slots line is exactly today's behaviour.
     """
+    started = time.time()
     try:
         fresh = check_slots(secrets, days_ahead=WIDEN_DAYS, timezone_name=timezone_name)
-        _prefetched[session_id] = fresh.get("slots") or []
+        slots = fresh.get("slots") or []
+        _prefetched[session_id] = slots
+        # Logged on success too. Silence here is indistinguishable from a task that never
+        # ran, and the question the logs have to answer is whether the agent called
+        # check_slots because the prompt was empty or because it ignored a full one.
+        log.info("[slots] %s prefetched %d in %dms (%s)", session_id, len(slots),
+                 int((time.time() - started) * 1000), fresh.get("source"))
     except Exception as exc:  # noqa: BLE001 — a warm cache is an optimisation, never a gate
-        print(f"[calendar] prefetch for {session_id} failed: {exc!r}")
+        log.warning("[slots] %s prefetch failed: %r", session_id, exc)
 
 
 def prefetched(session_id: str) -> list[dict]:
